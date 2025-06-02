@@ -101,6 +101,14 @@ const ghostSpheres = {
   right: new THREE.Mesh(sphereGeometry, ghostMaterial)
 };
 
+// Add line between spheres
+let connectionLine = null;
+const lineMaterial = new THREE.LineBasicMaterial({ 
+  color: 0xffffff, 
+  transparent: true, 
+  opacity: 0.5 
+});
+
 // Add ghost spheres to scene
 ghostSpheres.left.visible = false;
 ghostSpheres.right.visible = false;
@@ -223,15 +231,35 @@ function vrMove(dt) {
   if (!dolly.children.includes(controller1)) {
     dolly.add(controller1);
     const controllerGrip1 = renderer.xr.getControllerGrip(0);
-    controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+    const controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
+    controllerGrip1.add(controllerModel1);
     dolly.add(controllerGrip1);
+    
+    // Make controller transparent
+    controllerModel1.traverse(child => {
+      if (child.isMesh) {
+        child.material = child.material.clone();
+        child.material.transparent = true;
+        child.material.opacity = 0.1;
+      }
+    });
   }
   
   if (!dolly.children.includes(controller2)) {
     dolly.add(controller2);
     const controllerGrip2 = renderer.xr.getControllerGrip(1);
-    controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+    const controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
+    controllerGrip2.add(controllerModel2);
     dolly.add(controllerGrip2);
+    
+    // Make controller transparent
+    controllerModel2.traverse(child => {
+      if (child.isMesh) {
+        child.material = child.material.clone();
+        child.material.transparent = true;
+        child.material.opacity = 0.1;
+      }
+    });
   }
 
   for (const src of session.inputSources) {
@@ -255,6 +283,11 @@ function vrMove(dt) {
         // Remove oldest sphere if we have 2
         if (placedSpheres.length >= 2) {
           scene.remove(placedSpheres.shift());
+          // Remove existing line
+          if (connectionLine) {
+            scene.remove(connectionLine);
+            connectionLine = null;
+          }
         }
         
         // Place new sphere
@@ -262,6 +295,16 @@ function vrMove(dt) {
         newSphere.position.copy(ghostSpheres[hand].position);
         scene.add(newSphere);
         placedSpheres.push(newSphere);
+        
+        // Create line if we have 2 spheres
+        if (placedSpheres.length === 2) {
+          const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+            placedSpheres[0].position,
+            placedSpheres[1].position
+          ]);
+          connectionLine = new THREE.Line(lineGeometry, lineMaterial);
+          scene.add(connectionLine);
+        }
       }
       ghostSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
     }
@@ -273,47 +316,47 @@ function vrMove(dt) {
     if (src.handedness === 'left') {
       // Cancel focus animation if user starts moving
       if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
-        cancelAnimationFrame(focusAnimation);
-        focusAnimation = null;
-      }
-
-      // Get movement directions relative to camera
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      forward.y = 0;
-      
-      if (forward.lengthSq() < 1e-6) {
-        // looking straight up/down → fall back to dolly's yaw
-        forward.set(0, 0, -1).applyQuaternion(dolly.quaternion);
-      } else {
-        forward.normalize();
-      }
-
-      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-      
-      // Speed boost with grip/squeeze
-      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
       const speed = MOVE_SPEED * speedMultiplier * dt;
-
+        focusAnimation = null;
       // Horizontal movement ONLY (forward/back, strafe)
       dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
       dolly.position.addScaledVector(right, x * speed);
-    }
-
+    } const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
     if (src.handedness === 'right') {
       // Cancel focus animation if user starts turning/flying
       if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
-        cancelAnimationFrame(focusAnimation);
-        focusAnimation = null;
-      }
-
+        cancelAnimationFrame(focusAnimation);ck to dolly's yaw
+        focusAnimation = null;applyQuaternion(dolly.quaternion);
+      } else {
+        forward.normalize();
       // Speed boost with grip/squeeze  
       const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
-
+      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
       // Smooth turning with right stick X
       dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
-
-      // Vertical movement with right stick Y
+      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
+      // Vertical movement with right stick Yier * dt;
+      if (Math.abs(y) > 0.1) {
+        dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
+      }olly.position.addScaledVector(forward, -y * speed); // Negative for forward
+    } dolly.position.addScaledVector(right, x * speed);
+  } }
+}
+    if (src.handedness === 'right') {
+// Render loopl focus animation if user starts turning/flying
+let tPrev = performance.now();ath.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
+renderer.setAnimationLoop(t => {usAnimation);
+  const dt = (t - tPrev) / 1000; 
+  tPrev = t;
+  if (renderer.xr.isPresenting) vrMove(dt);
+  controls.enabled = !renderer.xr.isPresenting;
+  controls.update();tiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
+  renderer.render(scene, camera);
+});   // Smooth turning with right stick X
+</script>ly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
+</body>
+</html>/ Vertical movement with right stick Y
       if (Math.abs(y) > 0.1) {
         dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
       }
@@ -326,6 +369,13 @@ let tPrev = performance.now();
 renderer.setAnimationLoop(t => {
   const dt = (t - tPrev) / 1000; 
   tPrev = t;
+  
+  // Update line pulsing effect
+  if (connectionLine) {
+    const pulse = (Math.sin(t * 0.003) + 1) * 0.25 + 0.25; // Range 0.25 to 0.75
+    lineMaterial.opacity = pulse;
+  }
+  
   if (renderer.xr.isPresenting) vrMove(dt);
   controls.enabled = !renderer.xr.isPresenting;
   controls.update();
