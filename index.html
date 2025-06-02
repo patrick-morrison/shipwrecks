@@ -287,13 +287,21 @@ function vrMove(dt) {
     controllerGrip1.add(controllerModel1);
     dolly.add(controllerGrip1);
     
-    // Make controller transparent
-    controllerModel1.traverse(child => {
-      if (child.isMesh) {
-        child.material = child.material.clone();
-        child.material.transparent = true;
-        child.material.opacity = 0.1;
-      }
+    // Make controller transparent when loaded
+    controllerModel1.addEventListener('connected', () => {
+      controllerModel1.traverse(child => {
+        if (child.isMesh && child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => {
+              mat.transparent = true;
+              mat.opacity = 0.1;
+            });
+          } else {
+            child.material.transparent = true;
+            child.material.opacity = 0.1;
+          }
+        }
+      });
     });
   }
   
@@ -304,13 +312,21 @@ function vrMove(dt) {
     controllerGrip2.add(controllerModel2);
     dolly.add(controllerGrip2);
     
-    // Make controller transparent
-    controllerModel2.traverse(child => {
-      if (child.isMesh) {
-        child.material = child.material.clone();
-        child.material.transparent = true;
-        child.material.opacity = 0.1;
-      }
+    // Make controller transparent when loaded
+    controllerModel2.addEventListener('connected', () => {
+      controllerModel2.traverse(child => {
+        if (child.isMesh && child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => {
+              mat.transparent = true;
+              mat.opacity = 0.1;
+            });
+          } else {
+            child.material.transparent = true;
+            child.material.opacity = 0.1;
+          }
+        }
+      });
     });
   }
 
