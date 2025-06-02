@@ -287,7 +287,7 @@ const sunlight = new THREE.DirectionalLight(0x8099ff, 0.5);
 sunlight.position.set(0, 100, 0);
 scene.add(sunlight);
 
-// Loaders setup
+// Loaders setup with better error handling and progress
 const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/draco/');
 const ktx2  = new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/basis/').detectSupport(renderer);
 
@@ -296,17 +296,54 @@ loader.setDRACOLoader(draco);
 loader.setKTX2Loader(ktx2);
 loader.setMeshoptDecoder(MeshoptDecoder);
 
-// Load the wreck
-let wreck=null;
-loader.load(MODEL_URL, gltf => {
-  wreck = gltf.scene; scene.add(wreck);
-  const box = new THREE.Box3().setFromObject(wreck);
-  const sz  = box.getSize(new THREE.Vector3()).length();
-  const ctr = box.getCenter(new THREE.Vector3());
-  wreck.position.sub(ctr); // centre
-  controls.target.set(0,0,0);
-  camera.position.set(0, sz*0.3, sz*0.8);
-}, undefined, err => console.error(err));
+// Add loading indicator
+const loadingDiv = document.createElement('div');
+loadingDiv.style.cssText = `
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 20px;
+  border-radius: 8px;
+  font-family: sans-serif;
+  z-index: 1000;
+`;
+loadingDiv.innerHTML = 'Loading model...';
+document.body.appendChild(loadingDiv);
+
+// Load the wreck with progress tracking
+let wreck = null;
+loader.load(
+  MODEL_URL, 
+  gltf => {
+    wreck = gltf.scene; 
+    scene.add(wreck);
+    
+    const box = new THREE.Box3().setFromObject(wreck);
+    const sz  = box.getSize(new THREE.Vector3()).length();
+    const ctr = box.getCenter(new THREE.Vector3());
+    wreck.position.sub(ctr); // centre
+    controls.target.set(0,0,0);
+    camera.position.set(0, sz*0.3, sz*0.8);
+    
+    // Remove loading indicator
+    document.body.removeChild(loadingDiv);
+    console.log('Model loaded successfully');
+  },
+  progress => {
+    if (progress.lengthComputable) {
+      const percentComplete = progress.loaded / progress.total * 100;
+      loadingDiv.innerHTML = `Loading model... ${Math.round(percentComplete)}%`;
+    }
+  },
+  err => {
+    console.error('Model loading failed:', err);
+    loadingDiv.innerHTML = 'Failed to load model';
+    loadingDiv.style.color = '#ff6666';
+  }
+);
 
 // Add these variables after the existing sphere and line declarations
 let measurementSprite = null;
@@ -1023,6 +1060,16 @@ function syncMeasurementToDesktop() {
     desktopMeasurementMode = false;
     updateMeasurementPanel();
   }
+}
+
+// Optimize renderer settings for faster loading/rendering
+renderer.shadowMap.enabled = false; // Disable shadows if not needed
+renderer.physicallyCorrectLights = false;
+renderer.toneMapping = THREE.NoToneMapping;
+
+// Reduce pixel ratio on mobile for better performance
+if (window.devicePixelRatio > 2) {
+  renderer.setPixelRatio(1.5);
 }
 
 // Update the render loop to handle desktop measurement line pulsing and sprite positioning
