@@ -188,6 +188,72 @@ loader.load(MODEL_URL, gltf => {
   camera.position.set(0, sz*0.3, sz*0.8);
 }, undefined, err => console.error(err));
 
+// Measurement spheres and line
+const spheres = [];
+const measurementLine = new THREE.Group();
+scene.add(measurementLine);
+
+function createMeasurementSphere(position) {
+  const geometry = new THREE.SphereGeometry(0.01, 16, 12); // 2cm diameter (1cm radius)
+  const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const sphere = new THREE.Mesh(geometry, material);
+  sphere.position.copy(position);
+  scene.add(sphere);
+  
+  spheres.push(sphere);
+  
+  // Keep only the last 2 spheres
+  if (spheres.length > 2) {
+    scene.remove(spheres.shift());
+  }
+  
+  updateMeasurement();
+}
+
+function updateMeasurement() {
+  // Clear existing line and text
+  measurementLine.clear();
+  
+  if (spheres.length === 2) {
+    const start = spheres[0].position;
+    const end = spheres[1].position;
+    
+    // Create line
+    const points = [start, end];
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: 0xffff00 });
+    const line = new THREE.Line(geometry, material);
+    measurementLine.add(line);
+    
+    // Calculate distance
+    const distance = start.distanceTo(end);
+    
+    // Create text sprite for measurement
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 256;
+    canvas.height = 64;
+    
+    context.fillStyle = '#000000';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#ffffff';
+    context.font = '24px Arial';
+    context.textAlign = 'center';
+    context.fillText(`${distance.toFixed(2)}m`, canvas.width / 2, canvas.height / 2 + 8);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    
+    // Position text at midpoint
+    const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+    sprite.position.copy(midpoint);
+    sprite.scale.set(0.5, 0.125, 1);
+    
+    measurementLine.add(sprite);
+  }
+}
+
 // Enhanced VR movement - always smooth
 function vrMove(dt) {
   const session = renderer.xr.getSession();
@@ -200,6 +266,19 @@ function vrMove(dt) {
     // Quest 2 uses axes[2] and axes[3] for thumbstick on both controllers
     const x = gamepad.axes[2] || 0; // strafe
     const y = gamepad.axes[3] || 0; // walk (-y = forward)
+
+    // Check for trigger press to place measurement sphere
+    if (gamepad.buttons[0]?.pressed && !gamepad.buttons[0].wasPressed) {
+      if (src.gripSpace) {
+        const controllerPosition = new THREE.Vector3();
+        const tempMatrix = new THREE.Matrix4();
+        tempMatrix.fromArray(src.gripSpace.transform.matrix);
+        controllerPosition.setFromMatrixPosition(tempMatrix);
+        createMeasurementSphere(controllerPosition);
+      }
+    }
+    // Track button state for next frame
+    gamepad.buttons[0].wasPressed = gamepad.buttons[0].pressed;
 
     if (src.handedness === 'left') {
       // Cancel focus animation if user starts moving
