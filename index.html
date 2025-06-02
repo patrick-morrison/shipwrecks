@@ -604,6 +604,155 @@ function vrMove(dt) {
   }
 }
 
+// Update the vrMove function to handle both B and Y buttons for clearing measurements:
+function vrMove(dt) {
+  const session = renderer.xr.getSession();
+  if (!session || !controller1 || !controller2) return;
+
+  for (const src of session.inputSources) {
+    if (!src.gamepad) continue;
+
+    const gamepad = src.gamepad;
+    const hand = src.handedness;
+    const controllerIndex = hand === 'left' ? 0 : 1;
+    const controller = controllerIndex === 0 ? controller1 : controller2;
+    
+    // Handle clearing measurements with both controllers' B and Y buttons
+    if (src.handedness === 'right' || src.handedness === 'left') {
+      const yButtonCurrentlyPressed = gamepad.buttons[3]?.pressed; // Y button
+      const bButtonCurrentlyPressed = gamepad.buttons[1]?.pressed; // B button
+      
+      if ((yButtonCurrentlyPressed && !yButtonPressed) || (bButtonCurrentlyPressed && !bButtonPressed)) {
+        // Clear all measurements
+        ghostSpheres.left.visible = false;
+        ghostSpheres.right.visible = false;
+        placedSpheres.forEach(sphere => scene.remove(sphere));
+        placedSpheres.length = 0;
+        if (connectionLine) {
+          scene.remove(connectionLine);
+          connectionLine = null;
+        }
+        if (measurementSprite) {
+          measurementSprite.visible = false;
+        }
+        updateMeasurementPanel();
+      }
+      yButtonPressed = yButtonCurrentlyPressed;
+      bButtonPressed = bButtonCurrentlyPressed;
+    }
+    
+    // Initialize trigger state if not exists
+    if (!ghostSpheres[hand]) ghostSpheres[hand] = {};
+    if (!ghostSpheres[hand].triggerPressed) ghostSpheres[hand].triggerPressed = false;
+    
+    // Always update ghost sphere position when controller is available
+    if (controller && ghostSpheres[hand]) {
+      const worldPos = new THREE.Vector3();
+      controller.getWorldPosition(worldPos);
+      ghostSpheres[hand].position.copy(worldPos);
+      
+      // Show ghost spheres when measurement system is enabled
+      ghostSpheres[hand].visible = measurementSystemEnabled;
+      
+      // Handle trigger RELEASE for placing spheres (changed from press to release)
+      const triggerCurrentlyPressed = gamepad.buttons[0]?.pressed;
+      if (!triggerCurrentlyPressed && ghostSpheres[hand].triggerPressed && measurementSystemEnabled) {
+        // Remove oldest sphere if we have 2
+        if (placedSpheres.length >= 2) {
+          scene.remove(placedSpheres.shift());
+          if (connectionLine) {
+            scene.remove(connectionLine);
+            connectionLine = null;
+          }
+        }
+        
+        // Place new sphere
+        const newSphere = new THREE.Mesh(sphereGeometry, placedMaterial);
+        newSphere.position.copy(worldPos);
+        scene.add(newSphere);
+        placedSpheres.push(newSphere);
+        
+        // Create line if we have 2 spheres
+        if (placedSpheres.length === 2) {
+          const lineGeometry = new LineGeometry();
+          const positions = [];
+          positions.push(
+            placedSpheres[0].position.x, placedSpheres[0].position.y, placedSpheres[0].position.z,
+            placedSpheres[1].position.x, placedSpheres[1].position.y, placedSpheres[1].position.z
+          );
+          lineGeometry.setPositions(positions);
+          
+          connectionLine = new Line2(lineGeometry, vrLineMaterial);
+          connectionLine.computeLineDistances();
+          scene.add(connectionLine);
+          
+          const distance = placedSpheres[0].position.distanceTo(placedSpheres[1].position);
+          createMeasurementDisplay(distance);
+          
+          if (measurementSprite && !scene.children.includes(measurementSprite)) {
+            scene.add(measurementSprite);
+          }
+        }
+        updateMeasurementPanel();
+      }
+      ghostSpheres[hand].triggerPressed = triggerCurrentlyPressed;
+    }
+
+    // Movement controls - Use working version's movement logic
+    const x = gamepad.axes[2] || 0; // strafe
+    const y = gamepad.axes[3] || 0; // walk (-y = forward)
+
+    if (src.handedness === 'left') {
+      // Cancel focus animation if user starts moving
+      if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
+        cancelAnimationFrame(focusAnimation);
+        focusAnimation = null;
+      }
+
+      // Get movement directions relative to camera - USE WORKING VERSION METHOD
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0;
+      
+      if (forward.lengthSq() < 1e-6) {
+        // looking straight up/down → fall back to dolly's yaw
+        forward.set(0, 0, -1).applyQuaternion(dolly.quaternion);
+      } else {
+        forward.normalize();
+      }
+
+      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+      
+      // Speed boost with grip/squeeze
+      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
+      const speed = MOVE_SPEED * speedMultiplier * dt;
+
+      // Horizontal movement ONLY (forward/back, strafe) - CORRECT DIRECTIONS
+      dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
+      dolly.position.addScaledVector(right, x * speed);
+    }
+    
+    if (src.handedness === 'right') {
+      // Cancel focus animation if user starts turning/flying
+      if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
+        cancelAnimationFrame(focusAnimation);
+        focusAnimation = null;
+      }
+
+      // Speed boost with grip/squeeze  
+      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
+
+      // Smooth turning with right stick X
+      dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
+
+      // Vertical movement with right stick Y - CORRECT DIRECTION
+      if (Math.abs(y) > 0.1) {
+        dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
+      }
+    }
+  }
+}
+
 // Add measurement variables for desktop mode
 let desktopMeasurementPoints = [];
 let desktopMeasurementLine = null;
