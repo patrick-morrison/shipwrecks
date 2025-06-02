@@ -25,7 +25,7 @@
   <strong>Vertical:</strong> Trigger/grip or X/Y buttons for up/down<br>
   <strong>Teleport:</strong> Right trigger (A button) to teleport where pointing<br>
   <strong>Measure:</strong> Y button to toggle | Trigger to place points<br>
-  <strong>Desktop:</strong> Drag to orbit | Scroll to zoom | Double-click to focus
+  <strong>Desktop:</strong> M to toggle measure mode | Click to measure | Double-click to focus | C to clear | Drag to orbit | Scroll to zoom
 </div>
 
 <script type="module">
@@ -37,6 +37,11 @@ import { KTX2Loader }  from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples
 import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/meshopt_decoder.module.js';
 import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/XRControllerModelFactory.js';
+
+// Import the Line2 materials for thick lines
+import { Line2 } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/lines/Line2.js';
+import { LineMaterial } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/lines/LineMaterial.js';
+import { LineGeometry } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/lines/LineGeometry.js';
 
 // ------------------------ Config ----------------------------
 const MODEL_URL  = 'models/kxi.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
@@ -56,7 +61,7 @@ const dolly  = new THREE.Group(); dolly.add(camera); scene.add(dolly);
 const renderer = new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.5));
 renderer.setSize(window.innerWidth,window.innerHeight);
-renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.xr.enabled = true;
 
 document.body.appendChild(renderer.domElement);
@@ -90,8 +95,8 @@ const moveState = {
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-// Controller tracking spheres
-const sphereGeometry = new THREE.SphereGeometry(0.01, 8, 6); // 2cm radius, low-poly
+// Controller tracking spheres - make twice as big
+const sphereGeometry = new THREE.SphereGeometry(0.02, 8, 6); // 4cm radius, low-poly
 const ghostMaterial = new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.2});
 const placedMaterial = new THREE.MeshBasicMaterial({color: 0xffffff});
 
@@ -103,12 +108,36 @@ const ghostSpheres = {
   right: new THREE.Mesh(sphereGeometry, ghostMaterial)
 };
 
-// Add line between spheres
+// Add line between spheres - make it show through objects
 let connectionLine = null;
 const lineMaterial = new THREE.LineBasicMaterial({ 
   color: 0xffffff, 
   transparent: true, 
-  opacity: 0.5 
+  opacity: 0.5,
+  linewidth: .1,
+  depthTest: false // This makes the line render on top of everything
+});
+
+// Replace the VR line material with proper initialization
+const vrLineMaterial = new LineMaterial({
+  color: 0xffffff,
+  linewidth: 3, // Much thicker for testing - 5 pixels
+  transparent: true,
+  opacity: 0.8,
+  depthTest: false,
+  vertexColors: false,
+  dashed: false
+});
+
+// Replace the desktop line material with proper initialization  
+const desktopLineMaterial = new LineMaterial({
+  color: 0xffffff,
+  linewidth: 3, // Much thicker for testing - 5 pixels
+  transparent: true,
+  opacity: 0.8,
+  depthTest: false,
+  vertexColors: false,
+  dashed: false
 });
 
 // Add ghost spheres to scene
@@ -131,12 +160,47 @@ window.addEventListener('resize',()=>{
 // Mouse/touch interaction
 renderer.domElement.addEventListener('click', onMouseClick);
 
+// Add these variables near the top with other declarations
+let isDragging = false;
+let dragStartPosition = { x: 0, y: 0 };
+const DRAG_THRESHOLD = 5; // pixels
+
+// Add mouse event listeners for drag detection
+renderer.domElement.addEventListener('mousedown', onMouseDown);
+renderer.domElement.addEventListener('mousemove', onMouseMove);
+renderer.domElement.addEventListener('mouseup', onMouseUp);
+
+function onMouseDown(event) {
+  isDragging = false;
+  dragStartPosition.x = event.clientX;
+  dragStartPosition.y = event.clientY;
+}
+
+function onMouseMove(event) {
+  if (!isDragging) {
+    const deltaX = Math.abs(event.clientX - dragStartPosition.x);
+    const deltaY = Math.abs(event.clientY - dragStartPosition.y);
+    
+    if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+      isDragging = true;
+    }
+  }
+}
+
+function onMouseUp(event) {
+  // Reset drag state after a short delay to allow click event to process
+  setTimeout(() => {
+    isDragging = false;
+  }, 10);
+}
+
+// Update the onMouseClick function to check for dragging
 function onMouseClick(event) {
   const currentTime = Date.now();
   const isDoubleClick = currentTime - lastClickTime < DOUBLE_CLICK_TIME;
   lastClickTime = currentTime;
   
-  if (!isDoubleClick || renderer.xr.isPresenting) return;
+  if (renderer.xr.isPresenting || isDragging) return; // Don't place spheres when dragging
   
   // Calculate mouse position
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -147,7 +211,37 @@ function onMouseClick(event) {
   const intersects = raycaster.intersectObjects(scene.children, true);
   
   if (intersects.length > 0) {
-    focusOnPoint(intersects[0].point);
+    // Filter out measurement spheres and lines from intersections
+    const validIntersects = intersects.filter(intersect => 
+      !desktopMeasurementPoints.includes(intersect.object) &&
+      intersect.object !== desktopMeasurementLine &&
+      intersect.object !== connectionLine &&
+      !placedSpheres.includes(intersect.object)
+    );
+    
+    if (validIntersects.length > 0) {
+      if (isDoubleClick) {
+        // Double-click: focus on point
+        focusOnPoint(validIntersects[0].point);
+      } else if (desktopMeasurementMode) {
+        // Single click: place measurement point (only if measurement mode is active and not dragging)
+        const intersectionPoint = validIntersects[0].point;
+        
+        // If we already have max points, remove the oldest one
+        if (desktopMeasurementPoints.length >= MAX_DESKTOP_POINTS) {
+          const oldestSphere = desktopMeasurementPoints.shift();
+          scene.remove(oldestSphere);
+        }
+        
+        // Create new measurement sphere using VR style (white spheres)
+        const measurementSphere = new THREE.Mesh(sphereGeometry, placedMaterial);
+        measurementSphere.position.copy(intersectionPoint);
+        scene.add(measurementSphere);
+        desktopMeasurementPoints.push(measurementSphere);
+        
+        updateDesktopMeasurement();
+      }
+    }
   }
 }
 
@@ -225,8 +319,7 @@ let measurementTexture = null;
 // Add measurement system state variable after the existing sphere declarations
 let measurementSystemEnabled = true; // Start enabled
 let yButtonPressed = false; // Track Y button state
-let lastControllerMovement = 0; // Track when controllers last moved
-let lastControllerPositions = { left: null, right: null }; // Track controller positions
+let desktopMeasurementMode = false; // Desktop measurement mode toggle
 
 // Function to create measurement display
 function createMeasurementDisplay(distance) {
@@ -241,7 +334,7 @@ function createMeasurementDisplay(distance) {
   context.clearRect(0, 0, measurementCanvas.width, measurementCanvas.height);
   
   // Measure text to get proper background size
-  context.font = 'bold 24px Arial';
+  context.font = '600 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif';
   const text = `${distance.toFixed(2)}m`;
   const textMetrics = context.measureText(text);
   const textWidth = textMetrics.width;
@@ -421,11 +514,19 @@ function vrMove(dt) {
         
         // Create line if we have exactly 2 spheres
         if (placedSpheres.length === 2) {
-          const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-            placedSpheres[0].position,
-            placedSpheres[1].position
-          ]);
-          connectionLine = new THREE.Line(lineGeometry, lineMaterial);
+          const lineGeometry = new LineGeometry();
+          const positions = [];
+          positions.push(
+            placedSpheres[0].position.x, placedSpheres[0].position.y, placedSpheres[0].position.z,
+            placedSpheres[1].position.x, placedSpheres[1].position.y, placedSpheres[1].position.z
+          );
+          lineGeometry.setPositions(positions);
+          
+          if (connectionLine) {
+            scene.remove(connectionLine);
+          }
+          connectionLine = new Line2(lineGeometry, vrLineMaterial);
+          connectionLine.computeLineDistances();
           scene.add(connectionLine);
           
           // Calculate distance and create measurement display
@@ -437,6 +538,9 @@ function vrMove(dt) {
             scene.add(measurementSprite);
           }
         }
+        
+        // Update panel after placing sphere
+        updateMeasurementPanel();
       }
       
       // Update trigger state
@@ -495,42 +599,239 @@ function vrMove(dt) {
   }
 }
 
-// Render loop
-let tPrev = performance.now();
-renderer.setAnimationLoop(t => {
-  const dt = (t - tPrev) / 1000; 
-  tPrev = t;
+// Add measurement variables for desktop mode
+let desktopMeasurementPoints = [];
+let desktopMeasurementLine = null;
+let desktopMeasurementDisplay = null;
+const MAX_DESKTOP_POINTS = 2;
+
+// Create desktop measurement display element
+function createDesktopMeasurementDisplay() {
+  if (desktopMeasurementDisplay) return;
   
-  // Update line pulsing effect and measurement display
-  if (connectionLine && measurementSystemEnabled) {
-    const pulse = (Math.sin(t * 0.003) + 1) * 0.25 + 0.25; // Range 0.25 to 0.75
-    lineMaterial.opacity = pulse;
+  desktopMeasurementDisplay = document.createElement('div');
+  desktopMeasurementDisplay.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    z-index: 100;
+    display: none;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+  `;
+  document.body.appendChild(desktopMeasurementDisplay);
+}
+
+// Initialize desktop measurement display
+createDesktopMeasurementDisplay();
+
+// Desktop measurement spheres - make twice as big and white
+const desktopSphereGeometry = new THREE.SphereGeometry(0.04, 12, 8); // 8cm radius, twice as big
+const desktopSphereMaterial = new THREE.MeshBasicMaterial({color: 0xffffff}); // White instead of red
+
+// Create unified measurement panel for both VR and desktop
+function createMeasurementPanel() {
+  const panel = document.createElement('div');
+  panel.id = 'measurementPanel';
+  panel.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    z-index: 100;
+    cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(5px);
+    transition: all 0.3s ease;
+    user-select: none;
+    min-width: 120px;
+    text-align: center;
+  `;
+  
+  // Add hover effects
+  panel.addEventListener('mouseenter', () => {
+    panel.style.background = 'rgba(0, 0, 0, 0.8)';
+    panel.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+  });
+  
+  panel.addEventListener('mouseleave', () => {
+    panel.style.background = 'rgba(0, 0, 0, 0.7)';
+    panel.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+  });
+  
+  // Toggle measurement mode on click
+  panel.addEventListener('click', () => {
+    if (!renderer.xr.isPresenting) {
+      desktopMeasurementMode = !desktopMeasurementMode;
+      updateMeasurementPanel();
+      
+      if (!desktopMeasurementMode) {
+        clearDesktopMeasurement();
+      }
+    } else {
+      // In VR, toggle the VR measurement system
+      measurementSystemEnabled = !measurementSystemEnabled;
+      updateMeasurementPanel();
+      
+      if (!measurementSystemEnabled) {
+        // Clear VR measurements
+        ghostSpheres.left.visible = false;
+        ghostSpheres.right.visible = false;
+        placedSpheres.forEach(sphere => scene.remove(sphere));
+        placedSpheres.length = 0;
+        if (connectionLine) {
+          scene.remove(connectionLine);
+          connectionLine = null;
+        }
+        if (measurementSprite) {
+          measurementSprite.visible = false;
+        }
+      }
+    }
+  });
+  
+  document.body.appendChild(panel);
+  return panel;
+}
+
+// Initialize measurement panel
+const measurementPanel = createMeasurementPanel();
+
+function updateMeasurementPanel() {
+  const isVR = renderer.xr.isPresenting;
+  const isEnabled = isVR ? measurementSystemEnabled : desktopMeasurementMode;
+  const hasPoints = isVR ? placedSpheres.length : desktopMeasurementPoints.length;
+  const hasMeasurement = isVR ? (placedSpheres.length === 2) : (desktopMeasurementPoints.length === 2);
+  
+  if (!isEnabled) {
+    measurementPanel.innerHTML = `
+      <div style="color: #888;">MEASURE</div>
+      <div style="font-size: 12px; margin-top: 4px;">Click to enable</div>
+    `;
+    measurementPanel.style.borderColor = 'rgba(136, 136, 136, 0.3)';
+  } else if (hasMeasurement) {
+    const distance = isVR ? 
+      placedSpheres[0].position.distanceTo(placedSpheres[1].position) :
+      desktopMeasurementPoints[0].position.distanceTo(desktopMeasurementPoints[1].position);
     
-    // Update measurement display position to follow right controller
+    measurementPanel.innerHTML = `
+      <div style="color: white;">${distance.toFixed(2)}m</div>
+      <div style="font-size: 12px; margin-top: 4px;">Click to disable</div>
+    `;
+    measurementPanel.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+  } else {
+    const mode = isVR ? 'VR' : 'Desktop';
+    const instruction = isVR ? 'Use triggers' : 'Click points';
+    measurementPanel.innerHTML = `
+      <div style="color: #FFA726;">MEASURE: ON</div>
+      <div style="font-size: 12px; margin-top: 4px;">${instruction} (${hasPoints}/2)</div>
+    `;
+    measurementPanel.style.borderColor = 'rgba(255, 167, 38, 0.5)';
+  }
+}
+
+// Update desktop measurement to use the panel
+function updateDesktopMeasurement() {
+  updateMeasurementPanel();
+  
+  if (desktopMeasurementPoints.length === 2) {
+    // Create or update line with enhanced visibility
+    if (desktopMeasurementLine) {
+      scene.remove(desktopMeasurementLine);
+    }
+    
+    const lineGeometry = new LineGeometry();
+    const positions = [];
+    positions.push(
+      desktopMeasurementPoints[0].position.x, desktopMeasurementPoints[0].position.y, desktopMeasurementPoints[0].position.z,
+      desktopMeasurementPoints[1].position.x, desktopMeasurementPoints[1].position.y, desktopMeasurementPoints[1].position.z
+    );
+    lineGeometry.setPositions(positions);
+    
+    desktopMeasurementLine = new Line2(lineGeometry, desktopLineMaterial);
+    desktopMeasurementLine.computeLineDistances();
+    scene.add(desktopMeasurementLine);
+  } else {
+    if (desktopMeasurementLine) {
+      scene.remove(desktopMeasurementLine);
+      desktopMeasurementLine = null;
+    }
+  }
+}
+
+// Update clear function to refresh panel
+function clearDesktopMeasurement() {
+  desktopMeasurementPoints.forEach(sphere => scene.remove(sphere));
+  desktopMeasurementPoints.length = 0;
+  
+  if (desktopMeasurementLine) {
+    scene.remove(desktopMeasurementLine);
+    desktopMeasurementLine = null;
+  }
+  
+  updateMeasurementPanel();
+}
+
+// Add this variable declaration near the top with other variables (around line 100)
+let lastTime = 0;
+
+// Update the render loop to handle desktop measurement line pulsing and sprite positioning
+renderer.setAnimationLoop(time => {
+  const t = time;
+  const dt = Math.min((time - lastTime) / 1000, 0.1);
+  lastTime = time;
+
+  // IMPORTANT: Set resolution BEFORE rendering
+  const width = renderer.domElement.width;
+  const height = renderer.domElement.height;
+  vrLineMaterial.resolution.set(width, height);
+  desktopLineMaterial.resolution.set(width, height);
+
+  // Update desktop measurement line pulsing effect - 50% to 90% opacity
+  if (desktopMeasurementLine) {
+    const pulse = (Math.sin(t * 0.004) + 1) * 0.2 + 0.5;
+    desktopLineMaterial.opacity = pulse;
+    desktopMeasurementLine.visible = true; // Force visible
+  }
+  
+  // Update VR measurement display - 50% to 90% opacity
+  if (connectionLine && measurementSystemEnabled) {
+    const pulse = (Math.sin(t * 0.003) + 1) * 0.2 + 0.5;
+    vrLineMaterial.opacity = pulse;
+    connectionLine.visible = true; // Force visible
+    
     if (measurementSprite && renderer.xr.isPresenting) {
-      const controller2 = renderer.xr.getController(1); // Right controller
+      const controller2 = renderer.xr.getController(1);
       if (controller2) {
         const worldPos = new THREE.Vector3();
         controller2.getWorldPosition(worldPos);
         
         measurementSprite.position.copy(worldPos);
-        measurementSprite.position.y += 0.1; // Offset slightly above controller
-        measurementSprite.position.z -= 0.05; // Offset slightly forward
-        
-        // Simple opacity - just make it slightly transparent so it's not too intrusive
+        measurementSprite.position.y += 0.1;
+        measurementSprite.position.z -= 0.05;
         measurementSprite.material.opacity = 0.8;
         measurementSprite.material.transparent = true;
       }
     }
   } else {
-    // Hide measurement when no line exists or system is disabled
-    if (measurementSprite) {
+    if (measurementSprite && renderer.xr.isPresenting) {
       measurementSprite.visible = false;
     }
   }
   
-  // Show measurement when line exists and system is enabled
-  if (connectionLine && measurementSprite && measurementSystemEnabled) {
+  if (connectionLine && measurementSprite && measurementSystemEnabled && renderer.xr.isPresenting) {
     measurementSprite.visible = true;
   }
   
@@ -539,6 +840,9 @@ renderer.setAnimationLoop(t => {
   controls.update();
   renderer.render(scene, camera);
 });
+
+// Initialize panel state
+updateMeasurementPanel();
 </script>
 </body>
 </html>
