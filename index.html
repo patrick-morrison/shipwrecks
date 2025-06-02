@@ -221,7 +221,10 @@ function vrMove(dt) {
       }
 
       const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-      const speed = MOVE_SPEED * dt;
+      
+      // Speed boost with grip/squeeze
+      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
+      const speed = MOVE_SPEED * speedMultiplier * dt;
 
       // Horizontal movement ONLY (forward/back, strafe)
       dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
@@ -235,12 +238,15 @@ function vrMove(dt) {
         focusAnimation = null;
       }
 
+      // Speed boost with grip/squeeze  
+      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
+
       // Smooth turning with right stick X
-      dolly.rotation.y -= x * TURN_SPEED * dt;
+      dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
 
       // Vertical movement with right stick Y
       if (Math.abs(y) > 0.1) {
-        dolly.position.y -= y * FLY_SPEED * dt;
+        dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
       }
     }
   }
