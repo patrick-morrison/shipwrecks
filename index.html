@@ -921,19 +921,17 @@ renderer.xr.addEventListener('sessionstart', () => {
     setupControllers();
   }
 
-  session.addEventListener('inputsourceschange', onInputSourcesChange);
-
-  // Immediately attempt setup in case controllers are already connected
-  setupControllers();
+  session.addEventListener('inputsourceschange', onInputSourcesChange)
 
   // Manually fire 'connected' for any sources already present
   session.inputSources.forEach(src => {
-    if (src.handedness === 'left')  controller1.dispatchEvent({ type:'connected',    data:src });
-    if (src.handedness === 'right') controller2.dispatchEvent({ type:'connected',    data:src });
+    if (src.handedness === 'left')  controller1.dispatchEvent({ type:'connected', data:src });
+    if (src.handedness === 'right') controller2.dispatchEvent({ type:'connected', data:src });
   });
 
   updateMeasurementPanel();
   syncMeasurementToVR();
+  setupControllers();
 });
 
 renderer.xr.addEventListener('sessionend', () => {
