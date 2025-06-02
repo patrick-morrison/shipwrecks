@@ -211,32 +211,35 @@ function vrMove(dt) {
   const session = renderer.xr.getSession();
   if (!session) return;
 
+  // Get controller references
+  const controller1 = renderer.xr.getController(0);
+  const controller2 = renderer.xr.getController(1);
+
   for (const src of session.inputSources) {
     if (!src.gamepad) continue;
 
     const gamepad = src.gamepad;
     const hand = src.handedness;
+    const controllerIndex = hand === 'left' ? 0 : 1;
+    const controller = controllerIndex === 0 ? controller1 : controller2;
     
-    // Update controller sphere position
-    if (src.gripSpace && controllerSpheres[hand]) {
-      const pose = renderer.xr.getFrame().getPose(src.gripSpace, renderer.xr.getReferenceSpace());
-      if (pose) {
-        const pos = pose.transform.position;
-        controllerSpheres[hand].ghost.position.set(pos.x, pos.y, pos.z);
-        controllerSpheres[hand].ghost.visible = true;
-        
-        // Check trigger press (button 0)
-        if (gamepad.buttons[0]?.pressed && !controllerSpheres[hand].triggerPressed) {
-          // Place sphere
-          if (controllerSpheres[hand].placed) {
-            scene.remove(controllerSpheres[hand].placed);
-          }
-          controllerSpheres[hand].placed = new THREE.Mesh(sphereGeometry, placedMaterial);
-          controllerSpheres[hand].placed.position.copy(controllerSpheres[hand].ghost.position);
-          scene.add(controllerSpheres[hand].placed);
+    // Update controller sphere position using actual controller position
+    if (controllerSpheres[hand] && controller) {
+      // Get world position of controller
+      controller.getWorldPosition(controllerSpheres[hand].ghost.position);
+      controllerSpheres[hand].ghost.visible = true;
+      
+      // Check trigger press (button 0)
+      if (gamepad.buttons[0]?.pressed && !controllerSpheres[hand].triggerPressed) {
+        // Place sphere
+        if (controllerSpheres[hand].placed) {
+          scene.remove(controllerSpheres[hand].placed);
         }
-        controllerSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
+        controllerSpheres[hand].placed = new THREE.Mesh(sphereGeometry, placedMaterial);
+        controllerSpheres[hand].placed.position.copy(controllerSpheres[hand].ghost.position);
+        scene.add(controllerSpheres[hand].placed);
       }
+      controllerSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
     }
 
     // Quest 2 uses axes[2] and axes[3] for thumbstick on both controllers
