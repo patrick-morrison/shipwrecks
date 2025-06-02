@@ -94,7 +94,8 @@ const sphereGeometry = new THREE.SphereGeometry(0.01, 8, 6); // 2cm radius, low-
 const ghostMaterial = new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.2});
 const placedMaterial = new THREE.MeshBasicMaterial({color: 0xffffff});
 
-// Just two spheres total
+// Maximum of 2 placed spheres
+const MAX_SPHERES = 2;
 const placedSpheres = [];
 const ghostSpheres = {
   left: new THREE.Mesh(sphereGeometry, ghostMaterial),
@@ -280,23 +281,25 @@ function vrMove(dt) {
       
       // Check trigger press (button 0)
       if (gamepad.buttons[0]?.pressed && !ghostSpheres[hand].triggerPressed) {
-        // Remove oldest sphere if we have 2
-        if (placedSpheres.length >= 2) {
-          scene.remove(placedSpheres.shift());
-          // Remove existing line
+        // If we already have max spheres, remove the oldest one
+        if (placedSpheres.length >= MAX_SPHERES) {
+          const oldestSphere = placedSpheres.shift();
+          scene.remove(oldestSphere);
+          
+          // Remove existing line when removing spheres
           if (connectionLine) {
             scene.remove(connectionLine);
             connectionLine = null;
           }
         }
         
-        // Place new sphere
+        // Place new sphere at controller position
         const newSphere = new THREE.Mesh(sphereGeometry, placedMaterial);
         newSphere.position.copy(ghostSpheres[hand].position);
         scene.add(newSphere);
         placedSpheres.push(newSphere);
         
-        // Create line if we have 2 spheres
+        // Create line if we have exactly 2 spheres
         if (placedSpheres.length === 2) {
           const lineGeometry = new THREE.BufferGeometry().setFromPoints([
             placedSpheres[0].position,
