@@ -221,34 +221,19 @@ function handleLeftController(lx, ly, gamepad, dt) {
   camera.getWorldDirection(fwd);
   
   const side = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
-  const up = new THREE.Vector3(0, 1, 0);
   
   // Speed modifiers - Fixed button index for thumbstick press
   const speedMultiplier = gamepad.buttons[10]?.pressed ? 3 : 1; // Left stick press
   const currentSpeed = MOVE_SPEED * speedMultiplier * dt;
   
-  // Horizontal movement (forward/back, strafe)
+  // Horizontal movement ONLY (forward/back, strafe)
   fwd.y = 0; // Keep horizontal
   fwd.normalize();
   
   dolly.position.addScaledVector(fwd, -ly * currentSpeed); // Negative for forward
   dolly.position.addScaledVector(side, lx * currentSpeed);
   
-  // Vertical movement with trigger and grip - Fixed indices
-  if (gamepad.buttons[0]?.pressed) { // Left trigger (X button) - down
-    dolly.position.addScaledVector(up, -FLY_SPEED * dt);
-  }
-  if (gamepad.buttons[1]?.pressed) { // Left grip (Y button) - up  
-    dolly.position.addScaledVector(up, FLY_SPEED * dt);
-  }
-  
-  // Alternative: Use squeeze values for up/down
-  if (gamepad.buttons[4]?.value > 0.1) { // Left trigger squeeze - down
-    dolly.position.addScaledVector(up, -FLY_SPEED * gamepad.buttons[4].value * dt);
-  }
-  if (gamepad.buttons[5]?.value > 0.1) { // Left grip squeeze - up
-    dolly.position.addScaledVector(up, FLY_SPEED * gamepad.buttons[5].value * dt);
-  }
+  // NO VERTICAL MOVEMENT - removed all trigger/grip/squeeze controls
 }
 
 function handleRightController(rx, ry, gamepad, dt) {
