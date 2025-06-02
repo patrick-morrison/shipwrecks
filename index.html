@@ -225,6 +225,8 @@ let measurementTexture = null;
 // Add measurement system state variable after the existing sphere declarations
 let measurementSystemEnabled = true; // Start enabled
 let yButtonPressed = false; // Track Y button state
+let lastControllerMovement = 0; // Track when controllers last moved
+let lastControllerPositions = { left: null, right: null }; // Track controller positions
 
 // Function to create measurement display
 function createMeasurementDisplay(distance) {
@@ -238,16 +240,32 @@ function createMeasurementDisplay(distance) {
   const context = measurementCanvas.getContext('2d');
   context.clearRect(0, 0, measurementCanvas.width, measurementCanvas.height);
   
-  // Style the text
-  context.fillStyle = 'rgba(0, 0, 0, 0.8)';
-  context.fillRect(0, 0, measurementCanvas.width, measurementCanvas.height);
-  
-  context.fillStyle = 'white';
+  // Measure text to get proper background size
   context.font = 'bold 24px Arial';
+  const text = `${distance.toFixed(2)}m`;
+  const textMetrics = context.measureText(text);
+  const textWidth = textMetrics.width;
+  const textHeight = 24; // Font size
+  
+  // Add padding
+  const padding = 8;
+  const bgWidth = textWidth + (padding * 2);
+  const bgHeight = textHeight + (padding * 2);
+  
+  // Calculate position to center the background
+  const bgX = (measurementCanvas.width - bgWidth) / 2;
+  const bgY = (measurementCanvas.height - bgHeight) / 2;
+  
+  // Draw background with rounded corners
+  context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  context.beginPath();
+  context.roundRect(bgX, bgY, bgWidth, bgHeight, 4);
+  context.fill();
+  
+  // Draw text centered
+  context.fillStyle = 'white';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  
-  const text = `${distance.toFixed(2)}m`;
   context.fillText(text, measurementCanvas.width / 2, measurementCanvas.height / 2);
   
   // Create or update texture
@@ -377,8 +395,12 @@ function vrMove(dt) {
       controller.getWorldPosition(ghostSpheres[hand].position);
       ghostSpheres[hand].visible = true;
       
-      // Check trigger press (button 0)
-      if (gamepad.buttons[0]?.pressed && !ghostSpheres[hand].triggerPressed) {
+      // Check trigger release (button 0) - place sphere when trigger is released
+      const triggerCurrentlyPressed = gamepad.buttons[0]?.pressed;
+      
+      if (!triggerCurrentlyPressed && ghostSpheres[hand].triggerPressed) {
+        // Trigger just released - place sphere
+        
         // If we already have max spheres, remove the oldest one
         if (placedSpheres.length >= MAX_SPHERES) {
           const oldestSphere = placedSpheres.shift();
@@ -416,7 +438,9 @@ function vrMove(dt) {
           }
         }
       }
-      ghostSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
+      
+      // Update trigger state
+      ghostSpheres[hand].triggerPressed = triggerCurrentlyPressed;
     } else if (!measurementSystemEnabled) {
       // Hide ghost spheres when measurement system is disabled
       ghostSpheres[hand].visible = false;
@@ -488,9 +512,14 @@ renderer.setAnimationLoop(t => {
       if (controller2) {
         const worldPos = new THREE.Vector3();
         controller2.getWorldPosition(worldPos);
+        
         measurementSprite.position.copy(worldPos);
         measurementSprite.position.y += 0.1; // Offset slightly above controller
         measurementSprite.position.z -= 0.05; // Offset slightly forward
+        
+        // Simple opacity - just make it slightly transparent so it's not too intrusive
+        measurementSprite.material.opacity = 0.8;
+        measurementSprite.material.transparent = true;
       }
     }
   } else {
