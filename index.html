@@ -16,7 +16,7 @@
   #info{position:absolute;top:10px;left:10px;z-index:10;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;font-size:13px;line-height:1.3em}
   a{color:#87cefa;text-decoration:none}
 </style>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js"}}</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.177.0/build/three.module.js"}}</script>
 </head>
 <body>
 <div id="info">
@@ -27,18 +27,18 @@
 
 <script type="module">
 import * as THREE from 'three';
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/controls/OrbitControls.js';
-import { GLTFLoader }  from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/loaders/DRACOLoader.js';
-import { KTX2Loader }  from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/loaders/KTX2Loader.js';
-import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/meshopt_decoder.module.js';
-import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js';
-import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/XRControllerModelFactory.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader }  from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/loaders/DRACOLoader.js';
+import { KTX2Loader }  from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/libs/meshopt_decoder.module.js';
+import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/webxr/XRControllerModelFactory.js';
 
 // Import the Line2 materials for thick lines
-import { Line2 } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/lines/Line2.js';
-import { LineMaterial } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/lines/LineMaterial.js';
-import { LineGeometry } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/lines/LineGeometry.js';
+import { Line2 } from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/lines/Line2.js';
+import { LineMaterial } from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/lines/LineMaterial.js';
+import { LineGeometry } from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/lines/LineGeometry.js';
 
 // ------------------------ Config ----------------------------
 const MODEL_URL  = 'models/kxi.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
@@ -296,8 +296,8 @@ fillLight.position.set(-10, 10, -10);
 scene.add(fillLight);
 
 // Loaders setup with better error handling and progress
-const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/draco/');
-const ktx2  = new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/basis/').detectSupport(renderer);
+const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/libs/draco/');
+const ktx2  = new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/libs/basis/').detectSupport(renderer);
 
 const loader = new GLTFLoader();
 loader.setDRACOLoader(draco);
