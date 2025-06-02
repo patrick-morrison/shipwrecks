@@ -188,80 +188,6 @@ loader.load(MODEL_URL, gltf => {
   camera.position.set(0, sz*0.3, sz*0.8);
 }, undefined, err => console.error(err));
 
-// Measurement spheres and line
-const leftSphere = { mesh: null, button: { wasPressed: false } };
-const rightSphere = { mesh: null, button: { wasPressed: false } };
-const measurementLine = new THREE.Group();
-scene.add(measurementLine);
-
-function createMeasurementSphere(position, hand) {
-  const geometry = new THREE.SphereGeometry(0.01, 16, 12); // 2cm diameter (1cm radius)
-  const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const sphere = new THREE.Mesh(geometry, material);
-  sphere.position.copy(position);
-  scene.add(sphere);
-  
-  // Remove old sphere for this hand
-  if (hand === 'left' && leftSphere.mesh) {
-    scene.remove(leftSphere.mesh);
-  } else if (hand === 'right' && rightSphere.mesh) {
-    scene.remove(rightSphere.mesh);
-  }
-  
-  // Store new sphere
-  if (hand === 'left') {
-    leftSphere.mesh = sphere;
-  } else {
-    rightSphere.mesh = sphere;
-  }
-  
-  updateMeasurement();
-}
-
-function updateMeasurement() {
-  // Clear existing line and text
-  measurementLine.clear();
-  
-  if (leftSphere.mesh && rightSphere.mesh) {
-    const start = leftSphere.mesh.position;
-    const end = rightSphere.mesh.position;
-    
-    // Create line
-    const points = [start, end];
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({ color: 0xffff00 });
-    const line = new THREE.Line(geometry, material);
-    measurementLine.add(line);
-    
-    // Calculate distance
-    const distance = start.distanceTo(end);
-    
-    // Create text sprite for measurement
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    canvas.width = 256;
-    canvas.height = 64;
-    
-    context.fillStyle = '#000000';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = '#ffffff';
-    context.font = '24px Arial';
-    context.textAlign = 'center';
-    context.fillText(`${distance.toFixed(2)}m`, canvas.width / 2, canvas.height / 2 + 8);
-    
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(spriteMaterial);
-    
-    // Position text at midpoint
-    const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
-    sprite.position.copy(midpoint);
-    sprite.scale.set(0.5, 0.125, 1);
-    
-    measurementLine.add(sprite);
-  }
-}
-
 // Enhanced VR movement - always smooth
 function vrMove(dt) {
   const session = renderer.xr.getSession();
@@ -271,26 +197,9 @@ function vrMove(dt) {
     if (!src.gamepad) continue;
 
     const gamepad = src.gamepad;
-    const hand = src.handedness;
-    
     // Quest 2 uses axes[2] and axes[3] for thumbstick on both controllers
-    const x = gamepad.axes[2] || 0;
-    const y = gamepad.axes[3] || 0;
-
-    // Check for trigger press to place measurement sphere
-    const triggerPressed = gamepad.buttons[0]?.pressed;
-    const handData = hand === 'left' ? leftSphere : rightSphere;
-    
-    if (triggerPressed && !handData.button.wasPressed) {
-      if (src.gripSpace) {
-        const controllerPosition = new THREE.Vector3();
-        const tempMatrix = new THREE.Matrix4();
-        tempMatrix.fromArray(src.gripSpace.transform.matrix);
-        controllerPosition.setFromMatrixPosition(tempMatrix);
-        createMeasurementSphere(controllerPosition, hand);
-      }
-    }
-    handData.button.wasPressed = triggerPressed;
+    const x = gamepad.axes[2] || 0; // strafe
+    const y = gamepad.axes[3] || 0; // walk (-y = forward)
 
     if (src.handedness === 'left') {
       // Cancel focus animation if user starts moving
@@ -305,6 +214,7 @@ function vrMove(dt) {
       forward.y = 0;
       
       if (forward.lengthSq() < 1e-6) {
+        // looking straight up/down → fall back to dolly's yaw
         forward.set(0, 0, -1).applyQuaternion(dolly.quaternion);
       } else {
         forward.normalize();
@@ -316,19 +226,25 @@ function vrMove(dt) {
       const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
       const speed = MOVE_SPEED * speedMultiplier * dt;
 
-      dolly.position.addScaledVector(forward, -y * speed);
+      // Horizontal movement ONLY (forward/back, strafe)
+      dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
       dolly.position.addScaledVector(right, x * speed);
     }
 
     if (src.handedness === 'right') {
+      // Cancel focus animation if user starts turning/flying
       if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
         cancelAnimationFrame(focusAnimation);
         focusAnimation = null;
       }
 
+      // Speed boost with grip/squeeze  
       const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
+
+      // Smooth turning with right stick X
       dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
 
+      // Vertical movement with right stick Y
       if (Math.abs(y) > 0.1) {
         dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
       }
