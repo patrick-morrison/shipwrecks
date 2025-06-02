@@ -317,6 +317,7 @@ let measurementTexture = null;
 // Add measurement system state variable after the existing sphere declarations
 let measurementSystemEnabled = true; // Start enabled
 let yButtonPressed = false; // Track Y button state
+let bButtonPressed = false; // Track B button state
 let desktopMeasurementMode = false; // Desktop measurement mode toggle
 
 // Function to create measurement display
@@ -425,7 +426,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   initializeVRControllers();
 });
 
-// Update the vrMove function to handle undefined controllers gracefully:
+// Update the vrMove function to handle both B and Y buttons for measurement toggle:
 function vrMove(dt) {
   const session = renderer.xr.getSession();
   if (!session || !controller1 || !controller2) return;
@@ -438,11 +439,12 @@ function vrMove(dt) {
     const controllerIndex = hand === 'left' ? 0 : 1;
     const controller = controllerIndex === 0 ? controller1 : controller2;
     
-    // Handle measurement system toggle with right controller Y button
+    // Handle measurement system toggle with both controllers' B and Y buttons
     if (src.handedness === 'right') {
-      const yButtonCurrentlyPressed = gamepad.buttons[3]?.pressed;
+      const yButtonCurrentlyPressed = gamepad.buttons[3]?.pressed; // Y button
+      const bButtonCurrentlyPressed = gamepad.buttons[1]?.pressed; // B button
       
-      if (yButtonCurrentlyPressed && !yButtonPressed) {
+      if ((yButtonCurrentlyPressed && !yButtonPressed) || (bButtonCurrentlyPressed && !bButtonPressed)) {
         measurementSystemEnabled = !measurementSystemEnabled;
         
         if (!measurementSystemEnabled) {
@@ -461,6 +463,33 @@ function vrMove(dt) {
         updateMeasurementPanel();
       }
       yButtonPressed = yButtonCurrentlyPressed;
+      bButtonPressed = bButtonCurrentlyPressed;
+    }
+    
+    if (src.handedness === 'left') {
+      const yButtonCurrentlyPressed = gamepad.buttons[3]?.pressed; // Y button
+      const bButtonCurrentlyPressed = gamepad.buttons[1]?.pressed; // B button
+      
+      if ((yButtonCurrentlyPressed && !yButtonPressed) || (bButtonCurrentlyPressed && !bButtonPressed)) {
+        measurementSystemEnabled = !measurementSystemEnabled;
+        
+        if (!measurementSystemEnabled) {
+          ghostSpheres.left.visible = false;
+          ghostSpheres.right.visible = false;
+          placedSpheres.forEach(sphere => scene.remove(sphere));
+          placedSpheres.length = 0;
+          if (connectionLine) {
+            scene.remove(connectionLine);
+            connectionLine = null;
+          }
+          if (measurementSprite) {
+            measurementSprite.visible = false;
+          }
+        }
+        updateMeasurementPanel();
+      }
+      yButtonPressed = yButtonCurrentlyPressed;
+      bButtonPressed = bButtonCurrentlyPressed;
     }
     
     // Initialize trigger state if not exists
@@ -476,8 +505,9 @@ function vrMove(dt) {
       // Show ghost spheres when measurement system is enabled
       ghostSpheres[hand].visible = measurementSystemEnabled;
       
-      // Handle trigger press for placing spheres
-      if (gamepad.buttons[0]?.pressed && !ghostSpheres[hand].triggerPressed && measurementSystemEnabled) {
+      // Handle trigger RELEASE for placing spheres (changed from press to release)
+      const triggerCurrentlyPressed = gamepad.buttons[0]?.pressed;
+      if (!triggerCurrentlyPressed && ghostSpheres[hand].triggerPressed && measurementSystemEnabled) {
         // Remove oldest sphere if we have 2
         if (placedSpheres.length >= 2) {
           scene.remove(placedSpheres.shift());
@@ -516,7 +546,7 @@ function vrMove(dt) {
         }
         updateMeasurementPanel();
       }
-      ghostSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
+      ghostSpheres[hand].triggerPressed = triggerCurrentlyPressed;
     }
 
     // Movement controls - Use working version's movement logic
