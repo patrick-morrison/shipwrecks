@@ -396,19 +396,19 @@ function initializeVRControllers() {
     controllerGrip1 = renderer.xr.getControllerGrip(0);
     controllerGrip2 = renderer.xr.getControllerGrip(1);
 
-    dolly.add(controller1);
-    dolly.add(controller2);
-    dolly.add(controllerGrip1);
-    dolly.add(controllerGrip2);
+    if (controller1) dolly.add(controller1);
+    if (controller2) dolly.add(controller2);
+    if (controllerGrip1) dolly.add(controllerGrip1);
+    if (controllerGrip2) dolly.add(controllerGrip2);
 
     controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
     controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
-    controllerGrip1.add(controllerModel1);
-    controllerGrip2.add(controllerModel2);
+    if (controllerGrip1) controllerGrip1.add(controllerModel1);
+    if (controllerGrip2) controllerGrip2.add(controllerModel2);
 
     // Attach ghost spheres to controllers
-    controller1.add(ghostSpheres.left);
-    controller2.add(ghostSpheres.right);
+    if (controller1) controller1.add(ghostSpheres.left);
+    if (controller2) controller2.add(ghostSpheres.right);
 
     controllersInitialized = true;
   } catch (error) {
