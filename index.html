@@ -216,6 +216,52 @@ loader.load(MODEL_URL, gltf => {
   camera.position.set(0, sz*0.3, sz*0.8);
 }, undefined, err => console.error(err));
 
+// Add these variables after the existing sphere and line declarations
+let measurementSprite = null;
+let measurementCanvas = null;
+let measurementTexture = null;
+
+// Function to create measurement display
+function createMeasurementDisplay(distance) {
+  // Create canvas for text
+  if (!measurementCanvas) {
+    measurementCanvas = document.createElement('canvas');
+    measurementCanvas.width = 256;
+    measurementCanvas.height = 64;
+  }
+  
+  const context = measurementCanvas.getContext('2d');
+  context.clearRect(0, 0, measurementCanvas.width, measurementCanvas.height);
+  
+  // Style the text
+  context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  context.fillRect(0, 0, measurementCanvas.width, measurementCanvas.height);
+  
+  context.fillStyle = 'white';
+  context.font = 'bold 24px Arial';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  
+  const text = `${distance.toFixed(2)}m`;
+  context.fillText(text, measurementCanvas.width / 2, measurementCanvas.height / 2);
+  
+  // Create or update texture
+  if (!measurementTexture) {
+    measurementTexture = new THREE.CanvasTexture(measurementCanvas);
+  } else {
+    measurementTexture.needsUpdate = true;
+  }
+  
+  // Create or update sprite
+  if (!measurementSprite) {
+    const spriteMaterial = new THREE.SpriteMaterial({ map: measurementTexture });
+    measurementSprite = new THREE.Sprite(spriteMaterial);
+    measurementSprite.scale.set(0.3, 0.075, 1); // Scale down the sprite
+  }
+  
+  return measurementSprite;
+}
+
 // Enhanced VR movement - always smooth
 function vrMove(dt) {
   const session = renderer.xr.getSession();
@@ -307,6 +353,15 @@ function vrMove(dt) {
           ]);
           connectionLine = new THREE.Line(lineGeometry, lineMaterial);
           scene.add(connectionLine);
+          
+          // Calculate distance and create measurement display
+          const distance = placedSpheres[0].position.distanceTo(placedSpheres[1].position);
+          createMeasurementDisplay(distance);
+          
+          // Add measurement sprite to scene if not already added
+          if (measurementSprite && !scene.children.includes(measurementSprite)) {
+            scene.add(measurementSprite);
+          }
         }
       }
       ghostSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
@@ -367,10 +422,32 @@ renderer.setAnimationLoop(t => {
   const dt = (t - tPrev) / 1000; 
   tPrev = t;
   
-  // Update line pulsing effect
+  // Update line pulsing effect and measurement display
   if (connectionLine) {
     const pulse = (Math.sin(t * 0.003) + 1) * 0.25 + 0.25; // Range 0.25 to 0.75
     lineMaterial.opacity = pulse;
+    
+    // Update measurement display position to follow right controller
+    if (measurementSprite && renderer.xr.isPresenting) {
+      const controller2 = renderer.xr.getController(1); // Right controller
+      if (controller2) {
+        const worldPos = new THREE.Vector3();
+        controller2.getWorldPosition(worldPos);
+        measurementSprite.position.copy(worldPos);
+        measurementSprite.position.y += 0.1; // Offset slightly above controller
+        measurementSprite.position.z -= 0.05; // Offset slightly forward
+      }
+    }
+  } else {
+    // Hide measurement when no line exists
+    if (measurementSprite) {
+      measurementSprite.visible = false;
+    }
+  }
+  
+  // Show measurement when line exists
+  if (connectionLine && measurementSprite) {
+    measurementSprite.visible = true;
   }
   
   if (renderer.xr.isPresenting) vrMove(dt);
