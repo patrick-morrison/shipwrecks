@@ -435,11 +435,15 @@ function createMeasurementDisplay(distance) {
   return measurementSprite;
 }
 
-// Initialize VR controllers - simplified approach
+// Initialize VR controllers - simplified approach with proper race condition fixes
 const controllerModelFactory = new XRControllerModelFactory();
 let controller1, controller2, controllerGrip1, controllerGrip2;
 
 function setupControllers() {
+  // Reset flags so a re-run can succeed
+  if (controller1) controller1.userData = {};
+  if (controller2) controller2.userData = {};
+  
   controller1 = renderer.xr.getController(0);
   controller2 = renderer.xr.getController(1);
   controllerGrip1 = renderer.xr.getControllerGrip(0);
@@ -916,14 +920,19 @@ renderer.xr.addEventListener('sessionstart', () => {
   console.log('VR session started');
   const session = renderer.xr.getSession();
 
+  // 1) Listen ASAP - attach listener before doing anything else
   function onInputSourcesChange() {
-    console.log('Input sources changed, reinitializing controllers');
-    setupControllers();
+    console.log('Input sources changed, checking controller states');
+    // Note: We don't reinitialize here, just log the change
+    // The existing connected/disconnected handlers will manage the actual setup
   }
+  
+  session.addEventListener('inputsourceschange', onInputSourcesChange, false);
 
-  session.addEventListener('inputsourceschange', onInputSourcesChange)
+  // 2) Create fresh controller objects AFTER listener is wired
+  setupControllers();
 
-  // Manually fire 'connected' for any sources already present
+  // 3) Manually fire 'connected' for any sources already present
   session.inputSources.forEach(src => {
     if (src.handedness === 'left')  controller1.dispatchEvent({ type:'connected', data:src });
     if (src.handedness === 'right') controller2.dispatchEvent({ type:'connected', data:src });
@@ -931,7 +940,6 @@ renderer.xr.addEventListener('sessionstart', () => {
 
   updateMeasurementPanel();
   syncMeasurementToVR();
-  setupControllers();
 });
 
 renderer.xr.addEventListener('sessionend', () => {
@@ -1150,8 +1158,8 @@ renderer.setAnimationLoop(time => {
 // Initialize panel state
 updateMeasurementPanel();
 
-// Ensure controllers hook into WebXR connected events immediately
-setupControllers();
+// Remove the global setupControllers() call - it should only run after session starts
+// setupControllers(); // REMOVED - this was causing the race condition
 </script>
 </body>
 </html>
