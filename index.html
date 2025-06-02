@@ -383,9 +383,10 @@ function createMeasurementDisplay(distance) {
 // Initialize controllers when VR session starts
 let controller1, controller2, controllerGrip1, controllerGrip2;
 let controllerModel1, controllerModel2;
+let controllersInitialized = false;
 
 function initializeVRControllers() {
-  if (controller1) return; // Already initialized
+  if (controllersInitialized) return; // Already initialized
   
   const controllerModelFactory = new XRControllerModelFactory();
   
@@ -419,6 +420,8 @@ function initializeVRControllers() {
 
   controllerGrip1.addEventListener('connected', () => setupControllerVisibility(controllerModel1));
   controllerGrip2.addEventListener('connected', () => setupControllerVisibility(controllerModel2));
+  
+  controllersInitialized = true;
 }
 
 // Listen for VR session start/end
@@ -426,16 +429,13 @@ renderer.xr.addEventListener('sessionstart', () => {
   initializeVRControllers();
 });
 
-// Update the vrMove function to handle both B and Y buttons for measurement toggle:
+renderer.xr.addEventListener('sessionend', () => {
+  controllersInitialized = false;
+});
+
 function vrMove(dt) {
   const session = renderer.xr.getSession();
-  if (!session) return;
-  
-  // Check if controllers are initialized, if not, try to initialize them
-  if (!controller1 || !controller2) {
-    initializeVRControllers();
-    if (!controller1 || !controller2) return; // Still not ready, skip this frame
-  }
+  if (!session || !controllersInitialized) return;
 
   for (const src of session.inputSources) {
     if (!src.gamepad) continue;
@@ -444,6 +444,8 @@ function vrMove(dt) {
     const hand = src.handedness;
     const controllerIndex = hand === 'left' ? 0 : 1;
     const controller = controllerIndex === 0 ? controller1 : controller2;
+    
+    if (!controller) continue; // Skip if controller not ready
     
     // Handle clearing measurements with B and Y buttons (NOT grip buttons)
     const yButtonCurrentlyPressed = gamepad.buttons[3]?.pressed; // Y button
@@ -467,369 +469,11 @@ function vrMove(dt) {
     yButtonPressed = yButtonCurrentlyPressed;
     bButtonPressed = bButtonCurrentlyPressed;
     
-    // Initialize trigger state if not exists - fix the ghost sphere reference
-    if (!controller.userData.triggerPressed) {
+    // Initialize trigger state if not exists
+    if (controller.userData.triggerPressed === undefined) {
       controller.userData.triggerPressed = false;
     }
     
-    // Always update ghost sphere position when controller is available
-    const ghostSphere = ghostSpheres[hand];
-    if (controller && ghostSphere) {
-      const worldPos = new THREE.Vector3();
-      controller.getWorldPosition(worldPos);
-      ghostSphere.position.copy(worldPos);
-      
-      // Show ghost spheres when measurement system is enabled
-      ghostSphere.visible = measurementSystemEnabled;
-      
-      // Handle trigger RELEASE for placing spheres
-      const triggerCurrentlyPressed = gamepad.buttons[0]?.pressed;
-      if (!triggerCurrentlyPressed && controller.userData.triggerPressed && measurementSystemEnabled) {
-        // Remove oldest sphere if we have 2
-        if (placedSpheres.length >= 2) {
-          scene.remove(placedSpheres.shift());
-          if (connectionLine) {
-            scene.remove(connectionLine);
-            connectionLine = null;
-          }
-        }
-        
-        // Place new sphere
-        const newSphere = new THREE.Mesh(sphereGeometry, placedMaterial);
-        newSphere.position.copy(worldPos);
-        scene.add(newSphere);
-        placedSpheres.push(newSphere);
-        
-        // Create line if we have 2 spheres
-        if (placedSpheres.length === 2) {
-          const lineGeometry = new LineGeometry();
-          const positions = [];
-          positions.push(
-            placedSpheres[0].position.x, placedSpheres[0].position.y, placedSpheres[0].position.z,
-            placedSpheres[1].position.x, placedSpheres[1].position.y, placedSpheres[1].position.z
-          );
-          lineGeometry.setPositions(positions);
-          
-          connectionLine = new Line2(lineGeometry, vrLineMaterial);
-          connectionLine.computeLineDistances();
-          scene.add(connectionLine);
-          
-          const distance = placedSpheres[0].position.distanceTo(placedSpheres[1].position);
-          createMeasurementDisplay(distance);
-          
-          if (measurementSprite && !scene.children.includes(measurementSprite)) {
-            scene.add(measurementSprite);
-          }
-        }
-        updateMeasurementPanel();
-      }
-      controller.userData.triggerPressed = triggerCurrentlyPressed;
-    }
-
-    // Movement controls
-    const x = gamepad.axes[2] || 0; // strafe
-    const y = gamepad.axes[3] || 0; // walk (-y = forward)
-
-    if (src.handedness === 'left') {
-      // Cancel focus animation if user starts moving
-      if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
-        cancelAnimationFrame(focusAnimation);
-        focusAnimation = null;
-      }
-
-      // Get movement directions relative to camera
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      forward.y = 0;
-      
-      if (forward.lengthSq() < 1e-6) {
-        forward.set(0, 0, -1).applyQuaternion(dolly.quaternion);
-      } else {
-        forward.normalize();
-      }
-
-      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-      
-      // Speed boost with EITHER controller's grip/squeeze - 5x speed
-      const leftGrip = gamepad.buttons[1]?.pressed;
-      const rightController = session.inputSources.find(src => src.handedness === 'right');
-      const rightGrip = rightController?.gamepad?.buttons[1]?.pressed;
-      const speedMultiplier = (leftGrip || rightGrip) ? 5 : 1;
-      const speed = MOVE_SPEED * speedMultiplier * dt;
-
-      // Horizontal movement
-      dolly.position.addScaledVector(forward, -y * speed);
-      dolly.position.addScaledVector(right, x * speed);
-    }
-    
-    if (src.handedness === 'right') {
-      // Cancel focus animation if user starts turning/flying
-      if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
-        cancelAnimationFrame(focusAnimation);
-        focusAnimation = null;
-      }
-
-      // Speed boost with EITHER controller's grip/squeeze - 5x speed
-      const rightGrip = gamepad.buttons[1]?.pressed;
-      const leftController = session.inputSources.find(src => src.handedness === 'left');
-      const leftGrip = leftController?.gamepad?.buttons[1]?.pressed;
-      const speedMultiplier = (leftGrip || rightGrip) ? 5 : 1;
-
-      // Smooth turning with right stick X
-      dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
-
-      // Vertical movement with right stick Y
-      if (Math.abs(y) > 0.1) {
-        dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
-      }
-    }
+    // ...existing code...
   }
 }
-
-// Add measurement variables for desktop mode
-let desktopMeasurementPoints = [];
-let desktopMeasurementLine = null;
-let desktopMeasurementDisplay = null;
-const MAX_DESKTOP_POINTS = 2;
-
-// Create desktop measurement display element
-function createDesktopMeasurementDisplay() {
-  if (desktopMeasurementDisplay) return;
-  
-  desktopMeasurementDisplay = document.createElement('div');
-  desktopMeasurementDisplay.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 12px 16px;
-    border-radius: 8px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    font-size: 18px;
-    font-weight: 600;
-    z-index: 100;
-    display: none;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-  `;
-  document.body.appendChild(desktopMeasurementDisplay);
-}
-
-// Initialize desktop measurement display
-createDesktopMeasurementDisplay();
-
-// Desktop measurement spheres - make twice as big and white
-const desktopSphereGeometry = new THREE.SphereGeometry(0.04, 12, 8); // 8cm radius, twice as big
-const desktopSphereMaterial = new THREE.MeshBasicMaterial({color: 0xffffff}); // White instead of red
-
-// Create unified measurement panel for both VR and desktop
-function createMeasurementPanel() {
-  const panel = document.createElement('div');
-  panel.id = 'measurementPanel';
-  panel.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 16px 20px;
-    border-radius: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    font-size: 16px;
-    font-weight: 600;
-    z-index: 100;
-    cursor: pointer;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    backdrop-filter: blur(5px);
-    transition: all 0.3s ease;
-    user-select: none;
-    min-width: 120px;
-    text-align: center;
-  `;
-  
-  // Add hover effects
-  panel.addEventListener('mouseenter', () => {
-    panel.style.background = 'rgba(0, 0, 0, 0.8)';
-    panel.style.borderColor = 'rgba(255, 255, 255, 0.5)';
-  });
-  
-  panel.addEventListener('mouseleave', () => {
-    panel.style.background = 'rgba(0, 0, 0, 0.7)';
-    panel.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-  });
-  
-  // Toggle measurement mode on click
-  panel.addEventListener('click', () => {
-    if (!renderer.xr.isPresenting) {
-      desktopMeasurementMode = !desktopMeasurementMode;
-      updateMeasurementPanel();
-      
-      if (!desktopMeasurementMode) {
-        clearDesktopMeasurement();
-      }
-    } else {
-      // In VR, toggle the VR measurement system
-      measurementSystemEnabled = !measurementSystemEnabled;
-      updateMeasurementPanel();
-      
-      if (!measurementSystemEnabled) {
-        // Clear VR measurements
-        ghostSpheres.left.visible = false;
-        ghostSpheres.right.visible = false;
-        placedSpheres.forEach(sphere => scene.remove(sphere));
-        placedSpheres.length = 0;
-        if (connectionLine) {
-          scene.remove(connectionLine);
-          connectionLine = null;
-        }
-        if (measurementSprite) {
-          measurementSprite.visible = false;
-        }
-      }
-    }
-  });
-  
-  document.body.appendChild(panel);
-  return panel;
-}
-
-// Initialize measurement panel
-const measurementPanel = createMeasurementPanel();
-
-function updateMeasurementPanel() {
-  const isVR = renderer.xr.isPresenting;
-  const isEnabled = isVR ? measurementSystemEnabled : desktopMeasurementMode;
-  const hasPoints = isVR ? placedSpheres.length : desktopMeasurementPoints.length;
-  const hasMeasurement = isVR ? (placedSpheres.length === 2) : (desktopMeasurementPoints.length === 2);
-  
-  if (!isEnabled) {
-    measurementPanel.innerHTML = `
-      <div style="color: #888;">MEASURE</div>
-      <div style="font-size: 12px; margin-top: 4px;">Click to enable</div>
-    `;
-    measurementPanel.style.borderColor = 'rgba(136, 136, 136, 0.3)';
-  } else if (hasMeasurement) {
-    const distance = isVR ? 
-      placedSpheres[0].position.distanceTo(placedSpheres[1].position) :
-      desktopMeasurementPoints[0].position.distanceTo(desktopMeasurementPoints[1].position);
-    
-    measurementPanel.innerHTML = `
-      <div style="color: white;">${distance.toFixed(2)}m</div>
-      <div style="font-size: 12px; margin-top: 4px;">Click to disable</div>
-    `;
-    measurementPanel.style.borderColor = 'rgba(255, 255, 255, 0.5)';
-  } else {
-    const mode = isVR ? 'VR' : 'Desktop';
-    const instruction = isVR ? 'Use triggers' : 'Click points';
-    measurementPanel.innerHTML = `
-      <div style="color: #FFA726;">MEASURE: ON</div>
-      <div style="font-size: 12px; margin-top: 4px;">${instruction} (${hasPoints}/2)</div>
-    `;
-    measurementPanel.style.borderColor = 'rgba(255, 167, 38, 0.5)';
-  }
-}
-
-// Update desktop measurement to use the panel
-function updateDesktopMeasurement() {
-  updateMeasurementPanel();
-  
-  if (desktopMeasurementPoints.length === 2) {
-    // Create or update line with enhanced visibility
-    if (desktopMeasurementLine) {
-      scene.remove(desktopMeasurementLine);
-    }
-    
-    const lineGeometry = new LineGeometry();
-    const positions = [];
-    positions.push(
-      desktopMeasurementPoints[0].position.x, desktopMeasurementPoints[0].position.y, desktopMeasurementPoints[0].position.z,
-      desktopMeasurementPoints[1].position.x, desktopMeasurementPoints[1].position.y, desktopMeasurementPoints[1].position.z
-    );
-    lineGeometry.setPositions(positions);
-    
-    desktopMeasurementLine = new Line2(lineGeometry, desktopLineMaterial);
-    desktopMeasurementLine.computeLineDistances();
-    scene.add(desktopMeasurementLine);
-  } else {
-    if (desktopMeasurementLine) {
-      scene.remove(desktopMeasurementLine);
-      desktopMeasurementLine = null;
-    }
-  }
-}
-
-// Update clear function to refresh panel
-function clearDesktopMeasurement() {
-  desktopMeasurementPoints.forEach(sphere => scene.remove(sphere));
-  desktopMeasurementPoints.length = 0;
-  
-  if (desktopMeasurementLine) {
-    scene.remove(desktopMeasurementLine);
-    desktopMeasurementLine = null;
-  }
-  
-  updateMeasurementPanel();
-}
-
-// Add this variable declaration near the top with other variables (around line 100)
-let lastTime = 0;
-
-// Update the render loop to handle desktop measurement line pulsing and sprite positioning
-renderer.setAnimationLoop(time => {
-  const t = time;
-  const dt = Math.min((time - lastTime) / 1000, 0.1);
-  lastTime = time;
-
-  // IMPORTANT: Set resolution BEFORE rendering
-  const width = renderer.domElement.width;
-  const height = renderer.domElement.height;
-  vrLineMaterial.resolution.set(width, height);
-  desktopLineMaterial.resolution.set(width, height);
-
-  // Update desktop measurement line pulsing effect - 50% to 90% opacity
-  if (desktopMeasurementLine) {
-    const pulse = (Math.sin(t * 0.004) + 1) * 0.2 + 0.5;
-    desktopLineMaterial.opacity = pulse;
-    desktopMeasurementLine.visible = true; // Force visible
-  }
-  
-  // Update VR measurement display - 50% to 90% opacity
-  if (connectionLine && measurementSystemEnabled) {
-    const pulse = (Math.sin(t * 0.003) + 1) * 0.2 + 0.5;
-    vrLineMaterial.opacity = pulse;
-    connectionLine.visible = true; // Force visible
-    
-    if (measurementSprite && renderer.xr.isPresenting) {
-      const controller2 = renderer.xr.getController(1);
-      if (controller2) {
-        const worldPos = new THREE.Vector3();
-        controller2.getWorldPosition(worldPos);
-        
-        measurementSprite.position.copy(worldPos);
-        measurementSprite.position.y += 0.1;
-        measurementSprite.position.z -= 0.05;
-        measurementSprite.material.opacity = 0.8;
-        measurementSprite.material.transparent = true;
-      }
-    }
-  } else {
-    if (measurementSprite && renderer.xr.isPresenting) {
-      measurementSprite.visible = false;
-    }
-  }
-  
-  if (connectionLine && measurementSprite && measurementSystemEnabled && renderer.xr.isPresenting) {
-    measurementSprite.visible = true;
-  }
-  
-  if (renderer.xr.isPresenting) vrMove(dt);
-  controls.enabled = !renderer.xr.isPresenting;
-  controls.update();
-  renderer.render(scene, camera);
-});
-
-// Initialize panel state
-updateMeasurementPanel();
-</script>
-</body>
-</html>
