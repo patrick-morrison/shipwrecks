@@ -1,5 +1,5 @@
 <!--
-  Virtual Dive – HNLMS K XI (1925)
+  Virtual Dive – HNLMS K XI (1946)
   -------------------------------------------------------
   • Desktop/phone: Orbit drag & scroll.
   • Quest 2 VR   : Thumbsticks to fly/turn.
@@ -19,7 +19,12 @@
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js"}}</script>
 </head>
 <body>
-<div id="info">Left stick: move / strafe<br>Right stick: turn<br><span style="opacity:.6">(Desktop: drag to orbit, scroll to zoom)</span></div>
+<div id="info">
+  <strong>VR:</strong> Left stick: move/strafe | Right stick: turn/fly<br>
+  <strong>Speed:</strong> Press L3 for 3x speed | L1/L2 for up/down<br>
+  <strong>Teleport:</strong> Right trigger to teleport where pointing<br>
+  <strong>Desktop:</strong> Drag to orbit | Scroll to zoom | Double-click to focus
+</div>
 
 <script type="module">
 import * as THREE from 'three';
@@ -31,14 +36,16 @@ import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examp
 import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js';
 
 // ------------------------ Config ----------------------------
-const MODEL_URL  = 'models/kxi.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
-const MOVE_SPEED = 0.08;  // m/frame at full stick
-const TURN_SPEED = 2.0;   // rad/sec from right stick
+const MODEL_URL  = 'models/kxi.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
+const MOVE_SPEED = 2.0;    // m/s base movement speed
+const TURN_SPEED = 1.5;    // rad/s turn speed
+const FLY_SPEED = 1.0;     // m/s vertical movement
+const TELEPORT_DISTANCE = 5.0; // max teleport distance
 //-------------------------------------------------------------
 
 // Scene basics
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111111);
+scene.background = new THREE.Color(0x0a1a2a); // Deeper ocean blue
 
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 0.05, 2000);
 const dolly  = new THREE.Group(); dolly.add(camera); scene.add(dolly);
@@ -54,7 +61,27 @@ document.body.appendChild(VRButton.createButton(renderer));
 
 // Desktop orbit controls
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.enableDamping = true; 
+controls.dampingFactor = 0.08;
+controls.maxDistance = 100;
+controls.minDistance = 0.5;
+
+// Movement state
+const moveState = {
+  isMoving: false,
+  buttonPressed: false,
+  moveVector: new THREE.Vector3(),
+  rotationTarget: 0,
+  currentRotation: 0
+};
+
+// Raycaster for interactions
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+// Double-click focus system
+let lastClickTime = 0;
+const DOUBLE_CLICK_TIME = 300;
 
 window.addEventListener('resize',()=>{
   camera.aspect = window.innerWidth/window.innerHeight;
@@ -62,9 +89,65 @@ window.addEventListener('resize',()=>{
   renderer.setSize(window.innerWidth,window.innerHeight);
 });
 
-// Even, neutral lighting
-scene.add(new THREE.AmbientLight(0xffffff, 1.0));          // flat base light
-scene.add(new THREE.HemisphereLight(0x8888ff,0x202040,0.3)); // subtle colour top/bottom
+// Mouse/touch interaction
+renderer.domElement.addEventListener('click', onMouseClick);
+
+function onMouseClick(event) {
+  const currentTime = Date.now();
+  const isDoubleClick = currentTime - lastClickTime < DOUBLE_CLICK_TIME;
+  lastClickTime = currentTime;
+  
+  if (!isDoubleClick || renderer.xr.isPresenting) return;
+  
+  // Calculate mouse position
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  
+  // Raycast from camera
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(scene.children, true);
+  
+  if (intersects.length > 0) {
+    focusOnPoint(intersects[0].point);
+  }
+}
+
+function focusOnPoint(point) {
+  const startTarget = controls.target.clone();
+  const startPosition = camera.position.clone();
+  
+  // Calculate new camera position (maintain relative offset)
+  const offset = startPosition.clone().sub(startTarget);
+  const newPosition = point.clone().add(offset);
+  
+  // Smooth animation
+  const duration = 1000; // 1 second
+  const startTime = performance.now();
+  
+  function animate() {
+    const elapsed = performance.now() - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    
+    controls.target.lerpVectors(startTarget, point, eased);
+    camera.position.lerpVectors(startPosition, newPosition, eased);
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    }
+  }
+  
+  animate();
+}
+
+// Enhanced lighting for underwater feel
+scene.add(new THREE.AmbientLight(0x404080, 0.6));
+scene.add(new THREE.HemisphereLight(0x4080ff, 0x002040, 0.4));
+
+// Add subtle directional light from above
+const sunlight = new THREE.DirectionalLight(0x8099ff, 0.5);
+sunlight.position.set(0, 100, 0);
+scene.add(sunlight);
 
 // Loaders setup
 const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/draco/');
@@ -87,25 +170,135 @@ loader.load(MODEL_URL, gltf => {
   camera.position.set(0, sz*0.3, sz*0.8);
 }, undefined, err => console.error(err));
 
-// VR movement
+// Enhanced VR movement - always smooth with teleport option
 function vrMove(dt){
-  const s = renderer.xr.getSession(); if(!s) return;
-  for(const src of s.inputSources){
+  const session = renderer.xr.getSession(); 
+  if(!session) return;
+  
+  for(const src of session.inputSources){
     if(!src.gamepad || !src.handedness) continue;
-    const [lx,ly,rx] = src.gamepad.axes;
-    if(src.handedness==='left'){
-      const fwd=new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y=0; fwd.normalize();
-      const side=new THREE.Vector3().crossVectors(camera.up,fwd).normalize();
-      dolly.position.addScaledVector(fwd,-ly*MOVE_SPEED);  // Remove dt multiplication
-      dolly.position.addScaledVector(side,lx*MOVE_SPEED);  // Remove dt multiplication
-    }else{
-      dolly.rotation.y -= rx*TURN_SPEED*dt;
+    
+    const gamepad = src.gamepad;
+    const [lx, ly, rx, ry] = gamepad.axes;
+    
+    if(src.handedness === 'left'){
+      handleLeftController(lx, ly, gamepad, dt);
+    }
+    
+    if(src.handedness === 'right'){
+      handleRightController(rx, ry, gamepad, dt);
     }
   }
 }
 
+function handleLeftController(lx, ly, gamepad, dt) {
+  // Get movement directions relative to camera
+  const fwd = new THREE.Vector3();
+  camera.getWorldDirection(fwd);
+  
+  const side = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+  const up = new THREE.Vector3(0, 1, 0);
+  
+  // Speed modifiers
+  const speedMultiplier = gamepad.buttons[3]?.pressed ? 3 : 1; // Left stick press
+  const currentSpeed = MOVE_SPEED * speedMultiplier * dt;
+  
+  // Horizontal movement (forward/back, strafe)
+  fwd.y = 0; // Keep horizontal
+  fwd.normalize();
+  
+  dolly.position.addScaledVector(fwd, -ly * currentSpeed); // Negative for forward
+  dolly.position.addScaledVector(side, lx * currentSpeed);
+  
+  // Vertical movement with trigger buttons
+  if (gamepad.buttons[4]?.pressed) { // Left shoulder button - down
+    dolly.position.addScaledVector(up, -FLY_SPEED * dt);
+  }
+  if (gamepad.buttons[5]?.pressed) { // Left trigger - up  
+    dolly.position.addScaledVector(up, FLY_SPEED * dt);
+  }
+}
+
+function handleRightController(rx, ry, gamepad, dt) {
+  // Always smooth turning
+  dolly.rotation.y -= rx * TURN_SPEED * dt;
+  
+  // Vertical movement with right stick Y
+  if (Math.abs(ry) > 0.1) {
+    dolly.position.y += ry * FLY_SPEED * dt;
+  }
+  
+  // Teleport with right trigger
+  if (gamepad.buttons[1]?.pressed && !moveState.buttonPressed) {
+    moveState.buttonPressed = true;
+    teleportToSurface(rx, ry);
+  } else if (!gamepad.buttons[1]?.pressed) {
+    moveState.buttonPressed = false;
+  }
+}
+
+function teleportToSurface(rx, ry) {
+  // Get controller direction based on thumbstick input
+  const fwd = new THREE.Vector3();
+  camera.getWorldDirection(fwd);
+  
+  const side = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+  
+  // Calculate teleport direction
+  const teleportDirection = new THREE.Vector3()
+    .addScaledVector(fwd, -ry) // Forward/backward
+    .addScaledVector(side, rx); // Left/right
+  
+  teleportDirection.y = 0; // Keep horizontal
+  teleportDirection.normalize();
+  
+  // Raycast from current position in teleport direction
+  const startPos = dolly.position.clone();
+  startPos.y += 1.7; // Start from head height
+  
+  // Cast ray far into the distance
+  const rayDirection = teleportDirection.clone();
+  if (Math.abs(rx) < 0.1 && Math.abs(ry) < 0.1) {
+    // If no stick input, use camera forward direction
+    camera.getWorldDirection(rayDirection);
+    rayDirection.y = 0;
+    rayDirection.normalize();
+  }
+  
+  raycaster.set(startPos, rayDirection);
+  const intersects = raycaster.intersectObjects(scene.children, true);
+  
+  if (intersects.length > 0) {
+    const targetPoint = intersects[0].point;
+    const surfaceNormal = intersects[0].face.normal;
+    
+    // Position user above the surface
+    const standHeight = 1.7; // Average person height
+    const newPosition = targetPoint.clone().add(surfaceNormal.multiplyScalar(standHeight));
+    
+    // Smooth teleport animation
+    const startPosition = dolly.position.clone();
+    const duration = 300; // Quick teleport
+    const startTime = performance.now();
+    
+    function animateTeleport() {
+      const elapsed = performance.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+      
+      dolly.position.lerpVectors(startPosition, newPosition, eased);
+      
+      if (progress < 1) {
+        requestAnimationFrame(animateTeleport);
+      }
+    }
+    
+    animateTeleport();
+  }
+}
+
 // Render loop
-let tPrev=performance.now();  // Use performance.now() for better timing
+let tPrev=performance.now();
 renderer.setAnimationLoop(t=>{
   const dt=(t-tPrev)/1000; tPrev=t;
   if(renderer.xr.isPresenting) vrMove(dt);
