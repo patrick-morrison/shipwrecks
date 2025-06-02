@@ -251,83 +251,15 @@ function vrMove(dt) {
   }
 }
 
-// Teleport with right trigger - CORRECT Quest 2 mapping
-  if (gamepad.buttons[1]?.pressed && !moveState.buttonPressed) { // Right trigger is button 1
-    moveState.buttonPressed = true;
-    teleportToSurface(rx, ry);
-  } else if (!gamepad.buttons[1]?.pressed) {
-    moveState.buttonPressed = false;
-  }
-}
-
-function teleportToSurface(rx, ry) {
-  // Get controller direction based on thumbstick input
-  const fwd = new THREE.Vector3();
-  camera.getWorldDirection(fwd);
-  
-  const side = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
-  
-  // Calculate teleport direction
-  const teleportDirection = new THREE.Vector3()
-    .addScaledVector(fwd, -ry) // Forward/backward
-    .addScaledVector(side, rx); // Left/right
-  
-  teleportDirection.y = 0; // Keep horizontal
-  teleportDirection.normalize();
-  
-  // Raycast from current position in teleport direction
-  const startPos = dolly.position.clone();
-  startPos.y += 1.7; // Start from head height
-  
-  // Cast ray far into the distance
-  const rayDirection = teleportDirection.clone();
-  if (Math.abs(rx) < 0.1 && Math.abs(ry) < 0.1) {
-    // If no stick input, use camera forward direction
-    camera.getWorldDirection(rayDirection);
-    rayDirection.y = 0;
-    rayDirection.normalize();
-  }
-  
-  raycaster.set(startPos, rayDirection);
-  const intersects = raycaster.intersectObjects(scene.children, true);
-  
-  if (intersects.length > 0) {
-    const targetPoint = intersects[0].point;
-    const surfaceNormal = intersects[0].face.normal;
-    
-    // Position user above the surface
-    const standHeight = 1.7; // Average person height
-    const newPosition = targetPoint.clone().add(surfaceNormal.multiplyScalar(standHeight));
-    
-    // Smooth teleport animation
-    const startPosition = dolly.position.clone();
-    const duration = 300; // Quick teleport
-    const startTime = performance.now();
-    
-    function animateTeleport() {
-      const elapsed = performance.now() - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
-      
-      dolly.position.lerpVectors(startPosition, newPosition, eased);
-      
-      if (progress < 1) {
-        requestAnimationFrame(animateTeleport);
-      }
-    }
-    
-    animateTeleport();
-  }
-}
-
 // Render loop
-let tPrev=performance.now();
-renderer.setAnimationLoop(t=>{
-  const dt=(t-tPrev)/1000; tPrev=t;
-  if(renderer.xr.isPresenting) vrMove(dt);
-  controls.enabled=!renderer.xr.isPresenting;
+let tPrev = performance.now();
+renderer.setAnimationLoop(t => {
+  const dt = (t - tPrev) / 1000; 
+  tPrev = t;
+  if (renderer.xr.isPresenting) vrMove(dt);
+  controls.enabled = !renderer.xr.isPresenting;
   controls.update();
-  renderer.render(scene,camera);
+  renderer.render(scene, camera);
 });
 </script>
 </body>
