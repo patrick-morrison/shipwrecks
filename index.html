@@ -714,24 +714,24 @@ function vrMove(dt) {
         console.log('Cancelled focus animation due to right controller movement');
       }
       
-      // Speed boost with grip/squeeze (button 1) - add safety check
+      // Speed boost with grip/squeeze (button 1) - only for vertical movement
       const gripButton = gamepad.buttons[1];
-      const speedMultiplier = (gripButton && gripButton.pressed) ? 3 : 1;
+      const verticalSpeedMultiplier = (gripButton && gripButton.pressed) ? 3 : 1;
       
-      if (speedMultiplier > 1) {
-        console.log('Right grip pressed - speed boost active');
+      if (verticalSpeedMultiplier > 1) {
+        console.log('Right grip pressed - vertical speed boost active');
       }
       
-      // Smooth turning with right stick X
+      // Smooth turning with right stick X (no speed boost)
       if (Math.abs(x) > 0.1) {
-        dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
-        console.log('Right controller turn:', (x * TURN_SPEED * speedMultiplier * dt).toFixed(3));
+        dolly.rotation.y -= x * TURN_SPEED * dt; // No speed multiplier for turning
+        console.log('Right controller turn:', (x * TURN_SPEED * dt).toFixed(3));
       }
       
-      // Vertical movement with right stick Y
+      // Vertical movement with right stick Y (with speed boost)
       if (Math.abs(y) > 0.1) {
-        dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
-        console.log('Right controller vertical movement:', (-y * FLY_SPEED * speedMultiplier * dt).toFixed(3));
+        dolly.position.y -= y * FLY_SPEED * verticalSpeedMultiplier * dt;
+        console.log('Right controller vertical movement:', (-y * FLY_SPEED * verticalSpeedMultiplier * dt).toFixed(3));
       }
     }
   }
