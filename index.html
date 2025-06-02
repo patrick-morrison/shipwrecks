@@ -1,0 +1,118 @@
+<!--
+  Virtual Dive – HNLMS K XI (1925)
+  -------------------------------------------------------
+  • Desktop/phone: Orbit drag & scroll.
+  • Quest 2 VR   : Thumbsticks to fly/turn.
+  • Even lighting; KTX2, Draco & Meshopt decoding wired.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Virtual Dive – HNLMS K XI</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#111;color:#eee;font-family:sans-serif}
+  #info{position:absolute;top:10px;left:10px;z-index:10;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;font-size:13px;line-height:1.3em}
+  a{color:#87cefa;text-decoration:none}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js"}}</script>
+</head>
+<body>
+<div id="info">Left stick: move / strafe<br>Right stick: turn<br><span style="opacity:.6">(Desktop: drag to orbit, scroll to zoom)</span></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader }  from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/loaders/DRACOLoader.js';
+import { KTX2Loader }  from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/meshopt_decoder.module.js';
+import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js';
+
+// ------------------------ Config ----------------------------
+const MODEL_URL  = 'models/kxi.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
+const MOVE_SPEED = 0.08;  // m/frame at full stick
+const TURN_SPEED = 2.0;   // rad/sec from right stick
+//-------------------------------------------------------------
+
+// Scene basics
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111111);
+
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 0.05, 2000);
+const dolly  = new THREE.Group(); dolly.add(camera); scene.add(dolly);
+
+const renderer = new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.5));
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.xr.enabled = true;
+
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+// Desktop orbit controls
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+
+window.addEventListener('resize',()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+
+// Even, neutral lighting
+scene.add(new THREE.AmbientLight(0xffffff, 1.0));          // flat base light
+scene.add(new THREE.HemisphereLight(0x8888ff,0x202040,0.3)); // subtle colour top/bottom
+
+// Loaders setup
+const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/draco/');
+const ktx2  = new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/basis/').detectSupport(renderer);
+
+const loader = new GLTFLoader();
+loader.setDRACOLoader(draco);
+loader.setKTX2Loader(ktx2);
+loader.setMeshoptDecoder(MeshoptDecoder);
+
+// Load the wreck
+let wreck=null;
+loader.load(MODEL_URL, gltf => {
+  wreck = gltf.scene; scene.add(wreck);
+  const box = new THREE.Box3().setFromObject(wreck);
+  const sz  = box.getSize(new THREE.Vector3()).length();
+  const ctr = box.getCenter(new THREE.Vector3());
+  wreck.position.sub(ctr); // centre
+  controls.target.set(0,0,0);
+  camera.position.set(0, sz*0.3, sz*0.8);
+}, undefined, err => console.error(err));
+
+// VR movement
+function vrMove(dt){
+  const s = renderer.xr.getSession(); if(!s) return;
+  for(const src of s.inputSources){
+    if(!src.gamepad || !src.handedness) continue;
+    const [lx,ly,rx] = src.gamepad.axes;
+    if(src.handedness==='left'){
+      const fwd=new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y=0; fwd.normalize();
+      const side=new THREE.Vector3().crossVectors(camera.up,fwd).normalize();
+      dolly.position.addScaledVector(fwd,-ly*MOVE_SPEED*dt);
+      dolly.position.addScaledVector(side,lx*MOVE_SPEED*dt);
+    }else{
+      dolly.rotation.y -= rx*TURN_SPEED*dt;
+    }
+  }
+}
+
+// Render loop
+let tPrev=0;
+renderer.setAnimationLoop(t=>{
+  const dt=(t-tPrev)/1000; tPrev=t;
+  if(renderer.xr.isPresenting) vrMove(dt);
+  controls.enabled=!renderer.xr.isPresenting;
+  controls.update();
+  renderer.render(scene,camera);
+});
+</script>
+</body>
+</html>
