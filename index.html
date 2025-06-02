@@ -199,8 +199,8 @@ function handleLeftController(lx, ly, gamepad, dt) {
   const side = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
   const up = new THREE.Vector3(0, 1, 0);
   
-  // Speed modifiers
-  const speedMultiplier = gamepad.buttons[3]?.pressed ? 3 : 1; // Left stick press
+  // Speed modifiers - Fixed button index for thumbstick press
+  const speedMultiplier = gamepad.buttons[10]?.pressed ? 3 : 1; // Left stick press (was 3)
   const currentSpeed = MOVE_SPEED * speedMultiplier * dt;
   
   // Horizontal movement (forward/back, strafe)
@@ -210,12 +210,20 @@ function handleLeftController(lx, ly, gamepad, dt) {
   dolly.position.addScaledVector(fwd, -ly * currentSpeed); // Negative for forward
   dolly.position.addScaledVector(side, lx * currentSpeed);
   
-  // Vertical movement with trigger buttons
-  if (gamepad.buttons[4]?.pressed) { // Left shoulder button - down
+  // Vertical movement with trigger and grip - Fixed indices
+  if (gamepad.buttons[0]?.pressed) { // Left trigger (X button) - down
     dolly.position.addScaledVector(up, -FLY_SPEED * dt);
   }
-  if (gamepad.buttons[5]?.pressed) { // Left trigger - up  
+  if (gamepad.buttons[1]?.pressed) { // Left grip (Y button) - up  
     dolly.position.addScaledVector(up, FLY_SPEED * dt);
+  }
+  
+  // Alternative: Use squeeze values for up/down
+  if (gamepad.buttons[4]?.value > 0.1) { // Left trigger squeeze - down
+    dolly.position.addScaledVector(up, -FLY_SPEED * gamepad.buttons[4].value * dt);
+  }
+  if (gamepad.buttons[5]?.value > 0.1) { // Left grip squeeze - up
+    dolly.position.addScaledVector(up, FLY_SPEED * gamepad.buttons[5].value * dt);
   }
 }
 
@@ -223,16 +231,16 @@ function handleRightController(rx, ry, gamepad, dt) {
   // Always smooth turning
   dolly.rotation.y -= rx * TURN_SPEED * dt;
   
-  // Vertical movement with right stick Y
+  // Vertical movement with right stick Y - Fixed direction
   if (Math.abs(ry) > 0.1) {
-    dolly.position.y += ry * FLY_SPEED * dt;
+    dolly.position.y -= ry * FLY_SPEED * dt; // Changed from += to -=
   }
   
-  // Teleport with right trigger
-  if (gamepad.buttons[1]?.pressed && !moveState.buttonPressed) {
+  // Teleport with right trigger - Fixed button index
+  if (gamepad.buttons[0]?.pressed && !moveState.buttonPressed) { // Was buttons[1]
     moveState.buttonPressed = true;
     teleportToSurface(rx, ry);
-  } else if (!gamepad.buttons[1]?.pressed) {
+  } else if (!gamepad.buttons[0]?.pressed) {
     moveState.buttonPressed = false;
   }
 }
