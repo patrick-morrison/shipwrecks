@@ -384,70 +384,53 @@ function createMeasurementDisplay(distance) {
 let controller1, controller2, controllerGrip1, controllerGrip2;
 let controllerModel1, controllerModel2;
 let controllersInitialized = false;
-let initializationAttempted = false;
 
 function initializeVRControllers() {
-  if (controllersInitialized || initializationAttempted) return;
-  initializationAttempted = true;
-  
+  if (controllersInitialized) return;
+
   try {
-    console.log('Attempting to initialize VR controllers...');
     const controllerModelFactory = new XRControllerModelFactory();
-    
+
     controller1 = renderer.xr.getController(0);
     controller2 = renderer.xr.getController(1);
     controllerGrip1 = renderer.xr.getControllerGrip(0);
     controllerGrip2 = renderer.xr.getControllerGrip(1);
 
-    // Add controllers to dolly
     dolly.add(controller1);
     dolly.add(controller2);
     dolly.add(controllerGrip1);
     dolly.add(controllerGrip2);
 
-    // Add controller models (simplified)
     controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
     controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
     controllerGrip1.add(controllerModel1);
     controllerGrip2.add(controllerModel2);
 
+    // Attach ghost spheres to controllers
+    controller1.add(ghostSpheres.left);
+    controller2.add(ghostSpheres.right);
+
     controllersInitialized = true;
-    console.log('VR Controllers initialized successfully');
   } catch (error) {
-    console.warn('Controller initialization failed:', error);
-    initializationAttempted = false; // Allow retry
+    console.warn('Failed to initialize VR controllers:', error);
   }
 }
 
-// Listen for VR session start/end
 renderer.xr.addEventListener('sessionstart', () => {
-  console.log('VR session started');
-  initializationAttempted = false; // Reset for new session
-  // Try immediately
   initializeVRControllers();
-  // Try again after delay if first attempt failed
-  setTimeout(() => {
-    if (!controllersInitialized) {
-      initializeVRControllers();
-    }
-  }, 500);
 });
 
 renderer.xr.addEventListener('sessionend', () => {
-  console.log('VR session ended');
   controllersInitialized = false;
-  initializationAttempted = false;
 });
 
-// Update the vrMove function - remove the initialization calls
+// Update ghost sphere visibility
 function vrMove(dt) {
   const session = renderer.xr.getSession();
   if (!session || !controllersInitialized) return;
-  
-  // Controllers should be ready by now, no more initialization attempts
-  if (!controller1 || !controller2) {
-    return; // Controllers not ready yet
-  }
+
+  ghostSpheres.left.visible = true;
+  ghostSpheres.right.visible = true;
 
   try {
     for (const src of session.inputSources) {
@@ -455,104 +438,12 @@ function vrMove(dt) {
 
       const gamepad = src.gamepad;
       const hand = src.handedness;
-      const controllerIndex = hand === 'left' ? 0 : 1;
-      const controller = controllerIndex === 0 ? controller1 : controller2;
-      
-      // Simplified measurement button handling - only Y button
-      const yButtonCurrentlyPressed = gamepad.buttons[3]?.pressed; // Y button
-      
-      if (yButtonCurrentlyPressed && !yButtonPressed) {
-        // Clear all measurements
-        try {
-          ghostSpheres.left.visible = false;
-          ghostSpheres.right.visible = false;
-          placedSpheres.forEach(sphere => scene.remove(sphere));
-          placedSpheres.length = 0;
-          if (connectionLine) {
-            scene.remove(connectionLine);
-            connectionLine = null;
-          }
-          if (measurementSprite) {
-            measurementSprite.visible = false;
-          }
-          updateMeasurementPanel();
-        } catch (error) {
-          console.warn('Error clearing measurements:', error);
-        }
-      }
-      yButtonPressed = yButtonCurrentlyPressed;
-      
-      // Initialize trigger state if not exists
-      if (!controller.userData) {
-        controller.userData = {};
-      }
-      if (!controller.userData.triggerPressed) {
-        controller.userData.triggerPressed = false;
-      }
-      
-      // Simplified ghost sphere handling
-      const ghostSphere = ghostSpheres[hand];
-      if (controller && ghostSphere) {
-        try {
-          const worldPos = new THREE.Vector3();
-          controller.getWorldPosition(worldPos);
-          ghostSphere.position.copy(worldPos);
-          
-          // Show ghost spheres when measurement system is enabled
-          ghostSphere.visible = measurementSystemEnabled;
-          
-          // Handle trigger RELEASE for placing spheres
-          const triggerCurrentlyPressed = gamepad.buttons[0]?.pressed;
-          if (!triggerCurrentlyPressed && controller.userData.triggerPressed && measurementSystemEnabled) {
-            // Remove oldest sphere if we have 2
-            if (placedSpheres.length >= 2) {
-              scene.remove(placedSpheres.shift());
-              if (connectionLine) {
-                scene.remove(connectionLine);
-                connectionLine = null;
-              }
-            }
-            
-            // Place new sphere
-            const newSphere = new THREE.Mesh(sphereGeometry, placedMaterial);
-            newSphere.position.copy(worldPos);
-            scene.add(newSphere);
-            placedSpheres.push(newSphere);
-            
-            // Create line if we have 2 spheres
-            if (placedSpheres.length === 2) {
-              const lineGeometry = new LineGeometry();
-              const positions = [];
-              positions.push(
-                placedSpheres[0].position.x, placedSpheres[0].position.y, placedSpheres[0].position.z,
-                placedSpheres[1].position.x, placedSpheres[1].position.y, placedSpheres[1].position.z
-              );
-              lineGeometry.setPositions(positions);
-              
-              connectionLine = new Line2(lineGeometry, vrLineMaterial);
-              connectionLine.computeLineDistances();
-              scene.add(connectionLine);
-              
-              const distance = placedSpheres[0].position.distanceTo(placedSpheres[1].position);
-              createMeasurementDisplay(distance);
-              
-              if (measurementSprite && !scene.children.includes(measurementSprite)) {
-                scene.add(measurementSprite);
-              }
-            }
-            updateMeasurementPanel();
-          }
-          controller.userData.triggerPressed = triggerCurrentlyPressed;
-        } catch (error) {
-          console.warn('Error handling controller interaction:', error);
-        }
-      }
 
       // Movement controls
       const x = gamepad.axes[2] || 0; // strafe
       const y = gamepad.axes[3] || 0; // walk (-y = forward)
 
-      if (src.handedness === 'left') {
+      if (hand === 'left') {
         // Cancel focus animation if user starts moving
         if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
           cancelAnimationFrame(focusAnimation);
@@ -563,7 +454,7 @@ function vrMove(dt) {
         const forward = new THREE.Vector3();
         camera.getWorldDirection(forward);
         forward.y = 0;
-        
+
         if (forward.lengthSq() < 1e-6) {
           forward.set(0, 0, -1).applyQuaternion(dolly.quaternion);
         } else {
@@ -571,7 +462,7 @@ function vrMove(dt) {
         }
 
         const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-        
+
         // Speed boost with EITHER controller's grip/squeeze - 5x speed
         const leftGrip = gamepad.buttons[1]?.pressed;
         const rightController = session.inputSources.find(src => src.handedness === 'right');
@@ -583,8 +474,8 @@ function vrMove(dt) {
         dolly.position.addScaledVector(forward, -y * speed);
         dolly.position.addScaledVector(right, x * speed);
       }
-      
-      if (src.handedness === 'right') {
+
+      if (hand === 'right') {
         // Cancel focus animation if user starts turning/flying
         if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
           cancelAnimationFrame(focusAnimation);
