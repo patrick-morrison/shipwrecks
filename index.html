@@ -41,7 +41,7 @@ import { LineMaterial } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/example
 import { LineGeometry } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/lines/LineGeometry.js';
 
 // ------------------------ Config ----------------------------
-const MODEL_URL  = 'models/unknown_wreck_opt.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
+const MODEL_URL  = 'models/kxi.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
 const MOVE_SPEED = 2.0;    // m/s base movement speed
 const TURN_SPEED = 1.5;    // rad/s turn speed
 const FLY_SPEED = 1.0;     // m/s vertical movement
@@ -447,54 +447,54 @@ function createMeasurementDisplay(distance) {
 const controllerModelFactory = new XRControllerModelFactory();
 let controller1, controller2, controllerGrip1, controllerGrip2;
 
-function setupControllers() {
-  // Reset flags so a re-run can succeed
-  if (controller1) controller1.userData = {};
-  if (controller2) controller2.userData = {};
-  
-  controller1 = renderer.xr.getController(0);
-  controller2 = renderer.xr.getController(1);
-  controllerGrip1 = renderer.xr.getControllerGrip(0);
-  controllerGrip2 = renderer.xr.getControllerGrip(1);
+// ─────────────────────────────────────────────────────────
+// 1. Build two placeholder controllers + grips immediately
+// ─────────────────────────────────────────────────────────
+const controllers = [];
+const controllerGrips = [];
 
-  controller1.addEventListener('connected', (event) => {
-    controller1.userData.inputSource = event.data;
-    if (!controller1.userData.initialized) {
-      dolly.add(controller1);
-      const model = controllerModelFactory.createControllerModel(controllerGrip1);
-      controllerGrip1.add(model);
-      dolly.add(controllerGrip1);
-      controller1.userData.initialized = true;
-      console.log('✅ Controller 1 truly connected:', event.data);
-    }
-  });
+for (let i = 0; i < 2; i++) {
+  const ctrl = renderer.xr.getController(i);
+  const grip = renderer.xr.getControllerGrip(i);
+  grip.add(controllerModelFactory.createControllerModel(grip));
 
-  controller2.addEventListener('connected', (event) => {
-    controller2.userData.inputSource = event.data;
-    if (!controller2.userData.initialized) {
-      dolly.add(controller2);
-      const model = controllerModelFactory.createControllerModel(controllerGrip2);
-      controllerGrip2.add(model);
-      dolly.add(controllerGrip2);
-      controller2.userData.initialized = true;
-      console.log('✅ Controller 2 truly connected:', event.data);
-    }
-  });
+  // Add to scene now – they'll be invisible until `connected`
+  dolly.add(ctrl);
+  dolly.add(grip);
 
-  controller1.addEventListener('disconnected', () => {
-    dolly.remove(controller1);
-    dolly.remove(controllerGrip1);
-    controller1.userData.initialized = false;
-    console.log('❌ Controller 1 disconnected');
-  });
-
-  controller2.addEventListener('disconnected', () => {
-    dolly.remove(controller2);
-    dolly.remove(controllerGrip2);
-    controller2.userData.initialized = false;
-    console.log('❌ Controller 2 disconnected');
-  });
+  controllers.push(ctrl);
+  controllerGrips.push(grip);
 }
+
+// ─────────────────────────────────────────────────────────
+// 2. Use the controller's own events
+// ─────────────────────────────────────────────────────────
+controllers.forEach((ctrl, index) => {
+  ctrl.addEventListener('connected', evt => {
+    const { handedness, targetRayMode } = evt.data;
+    if (targetRayMode !== 'tracked-pointer') return; // skip hands
+
+    // Assign the global refs your measurement code expects
+    if (handedness === 'left') {
+      controller1 = ctrl;
+      controllerGrip1 = controllerGrips[index];
+    } else if (handedness === 'right') {
+      controller2 = ctrl;
+      controllerGrip2 = controllerGrips[index];
+    }
+
+    ctrl.userData.handedness = handedness;
+    ctrl.userData.initialised = true;
+    console.log(`✅ ${handedness} controller connected`);
+  });
+
+  ctrl.addEventListener('disconnected', () => {
+    const hand = ctrl.userData.handedness;
+    if (hand === 'left') { controller1 = controllerGrip1 = null; }
+    if (hand === 'right') { controller2 = controllerGrip2 = null; }
+    console.log(`❌ ${hand} controller disconnected`);
+  });
+});
 
 // Enhanced VR movement - always smooth
 function vrMove(dt) {
@@ -926,26 +926,6 @@ let lastTime = 0;
 // Add VR session event listeners to handle mode transitions
 renderer.xr.addEventListener('sessionstart', () => {
   console.log('VR session started');
-  const session = renderer.xr.getSession();
-
-  // 1) Listen ASAP - attach listener before doing anything else
-  function onInputSourcesChange() {
-    console.log('Input sources changed, checking controller states');
-    // Note: We don't reinitialize here, just log the change
-    // The existing connected/disconnected handlers will manage the actual setup
-  }
-  
-  session.addEventListener('inputsourceschange', onInputSourcesChange, false);
-
-  // 2) Create fresh controller objects AFTER listener is wired
-  setupControllers();
-
-  // 3) Manually fire 'connected' for any sources already present
-  session.inputSources.forEach(src => {
-    if (src.handedness === 'left')  controller1.dispatchEvent({ type:'connected', data:src });
-    if (src.handedness === 'right') controller2.dispatchEvent({ type:'connected', data:src });
-  });
-
   updateMeasurementPanel();
   syncMeasurementToVR();
 });
