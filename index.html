@@ -374,52 +374,45 @@ function createMeasurementDisplay(distance) {
   return measurementSprite;
 }
 
-// Move this outside the vrMove function - declare it globally after other declarations
+// Replace the vrMove function and add proper controller initialization
+
+// Add controller initialization after renderer setup (around line 60)
 const controllerModelFactory = new XRControllerModelFactory();
+const controller1 = renderer.xr.getController(0);
+const controller2 = renderer.xr.getController(1);
+const controllerGrip1 = renderer.xr.getControllerGrip(0);
+const controllerGrip2 = renderer.xr.getControllerGrip(1);
+
+// Add controllers to dolly immediately
+dolly.add(controller1);
+dolly.add(controller2);
+dolly.add(controllerGrip1);
+dolly.add(controllerGrip2);
+
+// Add controller models
+const controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
+const controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
+controllerGrip1.add(controllerModel1);
+controllerGrip2.add(controllerModel2);
+
+// Make controllers visible (remove transparency)
+function setupControllerVisibility(model) {
+  model.traverse(child => {
+    if (child.isMesh) {
+      child.material = child.material.clone();
+      child.material.transparent = false;
+      child.material.opacity = 1.0;
+    }
+  });
+}
+
+controllerGrip1.addEventListener('connected', () => setupControllerVisibility(controllerModel1));
+controllerGrip2.addEventListener('connected', () => setupControllerVisibility(controllerModel2));
 
 // Enhanced VR movement - always smooth
 function vrMove(dt) {
   const session = renderer.xr.getSession();
   if (!session) return;
-
-  // Get controller references
-  const controller1 = renderer.xr.getController(0);
-  const controller2 = renderer.xr.getController(1);
-  
-  // Add controllers to dolly and scene if not already added
-  if (!dolly.children.includes(controller1)) {
-    dolly.add(controller1);
-    const controllerGrip1 = renderer.xr.getControllerGrip(0);
-    const controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
-    controllerGrip1.add(controllerModel1);
-    dolly.add(controllerGrip1);
-    
-    // Make controller transparent
-    controllerModel1.traverse(child => {
-      if (child.isMesh) {
-        child.material = child.material.clone();
-        child.material.transparent = true;
-        child.material.opacity = 0.1;
-      }
-    });
-  }
-  
-  if (!dolly.children.includes(controller2)) {
-    dolly.add(controller2);
-    const controllerGrip2 = renderer.xr.getControllerGrip(1);
-    const controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
-    controllerGrip2.add(controllerModel2);
-    dolly.add(controllerGrip2);
-    
-    // Make controller transparent
-    controllerModel2.traverse(child => {
-      if (child.isMesh) {
-        child.material = child.material.clone();
-        child.material.transparent = true;
-        child.material.opacity = 0.1;
-      }
-    });
-  }
 
   for (const src of session.inputSources) {
     if (!src.gamepad) continue;
@@ -431,23 +424,16 @@ function vrMove(dt) {
     
     // Handle measurement system toggle with right controller Y button
     if (src.handedness === 'right') {
-      // Y button is typically button[3] on Quest controllers
       const yButtonCurrentlyPressed = gamepad.buttons[3]?.pressed;
       
       if (yButtonCurrentlyPressed && !yButtonPressed) {
-        // Button just pressed - toggle measurement system
         measurementSystemEnabled = !measurementSystemEnabled;
         
         if (!measurementSystemEnabled) {
-          // Disable: hide ghost spheres and clear existing measurements
           ghostSpheres.left.visible = false;
           ghostSpheres.right.visible = false;
-          
-          // Remove placed spheres
           placedSpheres.forEach(sphere => scene.remove(sphere));
           placedSpheres.length = 0;
-          
-          // Remove line and measurement display
           if (connectionLine) {
             scene.remove(connectionLine);
             connectionLine = null;
@@ -462,19 +448,23 @@ function vrMove(dt) {
     }
     
     // Initialize trigger state if not exists
+    if (!ghostSpheres[hand]) ghostSpheres[hand] = {};
     if (!ghostSpheres[hand].triggerPressed) ghostSpheres[hand].triggerPressed = false;
     
-    // Update ghost sphere position (only if measurement system is enabled)
-    if (ghostSpheres[hand] && controller && measurementSystemEnabled) {
-      controller.getWorldPosition(ghostSpheres[hand].position);
-      ghostSpheres[hand].visible = true;
+    // Always update ghost sphere position when controller is available
+    if (controller && ghostSpheres[hand]) {
+      const worldPos = new THREE.Vector3();
+      controller.getWorldPosition(worldPos);
+      ghostSpheres[hand].position.copy(worldPos);
       
-      // Check trigger press (button 0) - place sphere when pressed (like working version)
-      if (gamepad.buttons[0]?.pressed && !ghostSpheres[hand].triggerPressed) {
+      // Show ghost spheres when measurement system is enabled
+      ghostSpheres[hand].visible = measurementSystemEnabled;
+      
+      // Handle trigger press for placing spheres
+      if (gamepad.buttons[0]?.pressed && !ghostSpheres[hand].triggerPressed && measurementSystemEnabled) {
         // Remove oldest sphere if we have 2
         if (placedSpheres.length >= 2) {
           scene.remove(placedSpheres.shift());
-          // Remove existing line
           if (connectionLine) {
             scene.remove(connectionLine);
             connectionLine = null;
@@ -483,7 +473,7 @@ function vrMove(dt) {
         
         // Place new sphere
         const newSphere = new THREE.Mesh(sphereGeometry, placedMaterial);
-        newSphere.position.copy(ghostSpheres[hand].position);
+        newSphere.position.copy(worldPos);
         scene.add(newSphere);
         placedSpheres.push(newSphere);
         
@@ -501,27 +491,21 @@ function vrMove(dt) {
           connectionLine.computeLineDistances();
           scene.add(connectionLine);
           
-          // Calculate distance and create measurement display
           const distance = placedSpheres[0].position.distanceTo(placedSpheres[1].position);
           createMeasurementDisplay(distance);
           
-          // Add measurement sprite to scene if not already added
           if (measurementSprite && !scene.children.includes(measurementSprite)) {
             scene.add(measurementSprite);
           }
         }
-        
         updateMeasurementPanel();
       }
       ghostSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
-    } else if (!measurementSystemEnabled) {
-      // Hide ghost spheres when measurement system is disabled
-      ghostSpheres[hand].visible = false;
     }
 
-    // Quest 2 uses axes[2] and axes[3] for thumbstick on both controllers
-    const x = gamepad.axes[2] || 0; // strafe
-    const y = gamepad.axes[3] || 0; // walk (-y = forward)
+    // Movement controls - FIXED thumbstick axes
+    const x = gamepad.axes[2] || 0; // Right stick X / Left stick X
+    const y = gamepad.axes[3] || 0; // Right stick Y / Left stick Y
 
     if (src.handedness === 'left') {
       // Cancel focus animation if user starts moving
@@ -530,22 +514,24 @@ function vrMove(dt) {
         focusAnimation = null;
       }
       
-      // Speed boost with grip/squeeze (like working version)
+      // Speed boost with grip/squeeze
       const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
       const speed = MOVE_SPEED * speedMultiplier * dt;
       
-      // Use working version's forward vector calculation
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      forward.y = 0; // Lock to dolly's yaw
-      forward.applyQuaternion(dolly.quaternion);
+      // Get forward direction from camera
+      const forward = new THREE.Vector3(0, 0, -1);
+      forward.applyQuaternion(camera.quaternion);
+      forward.y = 0; // Keep movement horizontal
       forward.normalize();
       
-      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+      const right = new THREE.Vector3(1, 0, 0);
+      right.applyQuaternion(camera.quaternion);
+      right.y = 0;
+      right.normalize();
       
-      // Horizontal movement ONLY (forward/back, strafe)
-      dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
-      dolly.position.addScaledVector(right, x * speed);
+      // Apply movement
+      dolly.position.addScaledVector(forward, y * speed); // Y axis for forward/back
+      dolly.position.addScaledVector(right, x * speed);   // X axis for strafe
     }
     
     if (src.handedness === 'right') {
@@ -555,15 +541,15 @@ function vrMove(dt) {
         focusAnimation = null;
       }
       
-      // Speed boost with grip/squeeze (like working version)
+      // Speed boost with grip/squeeze
       const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
       
       // Smooth turning with right stick X
       dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
       
-      // Vertical movement with right stick Y (like working version)
+      // Vertical movement with right stick Y
       if (Math.abs(y) > 0.1) {
-        dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
+        dolly.position.y += y * FLY_SPEED * speedMultiplier * dt;
       }
     }
   }
