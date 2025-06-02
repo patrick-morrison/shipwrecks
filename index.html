@@ -221,12 +221,16 @@ function handleRightController(rx, ry, gamepad, dt) {
     focusAnimation = null;
   }
 
+  // Speed modifiers - Grip button for speed boost
+  const speedMultiplier = gamepad.buttons[2]?.pressed ? 3 : 1; // Grip button is button 2
+  const currentFlySpeed = FLY_SPEED * speedMultiplier * dt;
+
   // Smooth turning with right stick X
   dolly.rotation.y -= rx * TURN_SPEED * dt;
 
   // Vertical movement with right stick Y
   if (Math.abs(ry) > 0.1) {
-    dolly.position.y -= ry * FLY_SPEED * dt;
+    dolly.position.y -= ry * currentFlySpeed;
   }
 }
 
