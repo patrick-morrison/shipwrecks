@@ -384,11 +384,14 @@ function createMeasurementDisplay(distance) {
 let controller1, controller2, controllerGrip1, controllerGrip2;
 let controllerModel1, controllerModel2;
 let controllersInitialized = false;
+let initializationAttempted = false;
 
 function initializeVRControllers() {
-  if (controllersInitialized) return; // Already initialized
+  if (controllersInitialized || initializationAttempted) return;
+  initializationAttempted = true;
   
   try {
+    console.log('Attempting to initialize VR controllers...');
     const controllerModelFactory = new XRControllerModelFactory();
     
     controller1 = renderer.xr.getController(0);
@@ -412,28 +415,36 @@ function initializeVRControllers() {
     console.log('VR Controllers initialized successfully');
   } catch (error) {
     console.warn('Controller initialization failed:', error);
+    initializationAttempted = false; // Allow retry
   }
 }
 
 // Listen for VR session start/end
 renderer.xr.addEventListener('sessionstart', () => {
   console.log('VR session started');
+  initializationAttempted = false; // Reset for new session
+  // Try immediately
+  initializeVRControllers();
+  // Try again after delay if first attempt failed
   setTimeout(() => {
-    initializeVRControllers();
-  }, 100); // Small delay to ensure session is fully ready
+    if (!controllersInitialized) {
+      initializeVRControllers();
+    }
+  }, 500);
 });
 
 renderer.xr.addEventListener('sessionend', () => {
   console.log('VR session ended');
   controllersInitialized = false;
+  initializationAttempted = false;
 });
 
-// Update the vrMove function to handle both B and Y buttons for measurement toggle:
+// Update the vrMove function - remove the initialization calls
 function vrMove(dt) {
   const session = renderer.xr.getSession();
   if (!session || !controllersInitialized) return;
   
-  // Simple controller check
+  // Controllers should be ready by now, no more initialization attempts
   if (!controller1 || !controller2) {
     return; // Controllers not ready yet
   }
