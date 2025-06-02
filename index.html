@@ -429,7 +429,13 @@ renderer.xr.addEventListener('sessionstart', () => {
 // Update the vrMove function to handle both B and Y buttons for measurement toggle:
 function vrMove(dt) {
   const session = renderer.xr.getSession();
-  if (!session || !controller1 || !controller2) return;
+  if (!session) return;
+  
+  // Check if controllers are initialized, if not, try to initialize them
+  if (!controller1 || !controller2) {
+    initializeVRControllers();
+    if (!controller1 || !controller2) return; // Still not ready, skip this frame
+  }
 
   for (const src of session.inputSources) {
     if (!src.gamepad) continue;
@@ -461,22 +467,24 @@ function vrMove(dt) {
     yButtonPressed = yButtonCurrentlyPressed;
     bButtonPressed = bButtonCurrentlyPressed;
     
-    // Initialize trigger state if not exists
-    if (!ghostSpheres[hand]) ghostSpheres[hand] = {};
-    if (!ghostSpheres[hand].triggerPressed) ghostSpheres[hand].triggerPressed = false;
+    // Initialize trigger state if not exists - fix the ghost sphere reference
+    if (!controller.userData.triggerPressed) {
+      controller.userData.triggerPressed = false;
+    }
     
     // Always update ghost sphere position when controller is available
-    if (controller && ghostSpheres[hand]) {
+    const ghostSphere = ghostSpheres[hand];
+    if (controller && ghostSphere) {
       const worldPos = new THREE.Vector3();
       controller.getWorldPosition(worldPos);
-      ghostSpheres[hand].position.copy(worldPos);
+      ghostSphere.position.copy(worldPos);
       
       // Show ghost spheres when measurement system is enabled
-      ghostSpheres[hand].visible = measurementSystemEnabled;
+      ghostSphere.visible = measurementSystemEnabled;
       
       // Handle trigger RELEASE for placing spheres
       const triggerCurrentlyPressed = gamepad.buttons[0]?.pressed;
-      if (!triggerCurrentlyPressed && ghostSpheres[hand].triggerPressed && measurementSystemEnabled) {
+      if (!triggerCurrentlyPressed && controller.userData.triggerPressed && measurementSystemEnabled) {
         // Remove oldest sphere if we have 2
         if (placedSpheres.length >= 2) {
           scene.remove(placedSpheres.shift());
@@ -515,7 +523,7 @@ function vrMove(dt) {
         }
         updateMeasurementPanel();
       }
-      ghostSpheres[hand].triggerPressed = triggerCurrentlyPressed;
+      controller.userData.triggerPressed = triggerCurrentlyPressed;
     }
 
     // Movement controls
