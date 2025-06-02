@@ -398,21 +398,13 @@ function vrMove(dt) {
     controllerGrip1.add(controllerModel1);
     dolly.add(controllerGrip1);
     
-    // Make controller transparent when loaded
-    controllerModel1.addEventListener('connected', () => {
-      controllerModel1.traverse(child => {
-        if (child.isMesh && child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach(mat => {
-              mat.transparent = true;
-              mat.opacity = 0.1;
-            });
-          } else {
-            child.material.transparent = true;
-            child.material.opacity = 0.1;
-          }
-        }
-      });
+    // Make controller transparent
+    controllerModel1.traverse(child => {
+      if (child.isMesh) {
+        child.material = child.material.clone();
+        child.material.transparent = true;
+        child.material.opacity = 0.1;
+      }
     });
   }
   
@@ -423,21 +415,13 @@ function vrMove(dt) {
     controllerGrip2.add(controllerModel2);
     dolly.add(controllerGrip2);
     
-    // Make controller transparent when loaded
-    controllerModel2.addEventListener('connected', () => {
-      controllerModel2.traverse(child => {
-        if (child.isMesh && child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach(mat => {
-              mat.transparent = true;
-              mat.opacity = 0.1;
-            });
-          } else {
-            child.material.transparent = true;
-            child.material.opacity = 0.1;
-          }
-        }
-      });
+    // Make controller transparent
+    controllerModel2.traverse(child => {
+      if (child.isMesh) {
+        child.material = child.material.clone();
+        child.material.transparent = true;
+        child.material.opacity = 0.1;
+      }
     });
   }
 
@@ -489,31 +473,25 @@ function vrMove(dt) {
       controller.getWorldPosition(ghostSpheres[hand].position);
       ghostSpheres[hand].visible = true;
       
-      // Check trigger release (button 0) - place sphere when trigger is released
-      const triggerCurrentlyPressed = gamepad.buttons[0]?.pressed;
-      
-      if (!triggerCurrentlyPressed && ghostSpheres[hand].triggerPressed) {
-        // Trigger just released - place sphere
-        
-        // If we already have max spheres, remove the oldest one
-        if (placedSpheres.length >= MAX_SPHERES) {
-          const oldestSphere = placedSpheres.shift();
-          scene.remove(oldestSphere);
-          
-          // Remove existing line when removing spheres
+      // Check trigger press (button 0) - place sphere when pressed (like working version)
+      if (gamepad.buttons[0]?.pressed && !ghostSpheres[hand].triggerPressed) {
+        // Remove oldest sphere if we have 2
+        if (placedSpheres.length >= 2) {
+          scene.remove(placedSpheres.shift());
+          // Remove existing line
           if (connectionLine) {
             scene.remove(connectionLine);
             connectionLine = null;
           }
         }
         
-        // Place new sphere at controller position
+        // Place new sphere
         const newSphere = new THREE.Mesh(sphereGeometry, placedMaterial);
         newSphere.position.copy(ghostSpheres[hand].position);
         scene.add(newSphere);
         placedSpheres.push(newSphere);
         
-        // Create line if we have exactly 2 spheres
+        // Create line if we have 2 spheres
         if (placedSpheres.length === 2) {
           const lineGeometry = new LineGeometry();
           const positions = [];
@@ -523,9 +501,6 @@ function vrMove(dt) {
           );
           lineGeometry.setPositions(positions);
           
-          if (connectionLine) {
-            scene.remove(connectionLine);
-          }
           connectionLine = new Line2(lineGeometry, vrLineMaterial);
           connectionLine.computeLineDistances();
           scene.add(connectionLine);
@@ -540,20 +515,17 @@ function vrMove(dt) {
           }
         }
         
-        // Update panel after placing sphere
         updateMeasurementPanel();
       }
-      
-      // Update trigger state
-      ghostSpheres[hand].triggerPressed = triggerCurrentlyPressed;
+      ghostSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
     } else if (!measurementSystemEnabled) {
       // Hide ghost spheres when measurement system is disabled
       ghostSpheres[hand].visible = false;
     }
 
     // Quest 2 uses axes[2] and axes[3] for thumbstick on both controllers
-    const x = gamepad.axes[2] || 0; // strafe/turn
-    const y = gamepad.axes[3] || 0; // walk/fly
+    const x = gamepad.axes[2] || 0; // strafe
+    const y = gamepad.axes[3] || 0; // walk (-y = forward)
 
     if (src.handedness === 'left') {
       // Cancel focus animation if user starts moving
@@ -562,17 +534,18 @@ function vrMove(dt) {
         focusAnimation = null;
       }
       
-      // Speed boost with thumbstick press (button[3] for left stick)
-      const speedMultiplier = gamepad.buttons[3]?.pressed ? 3 : 1;
+      // Speed boost with grip/squeeze (like working version)
+      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
       const speed = MOVE_SPEED * speedMultiplier * dt;
       
-      // Fixed forward vector calculation
-      const forward = new THREE.Vector3(0, 0, -1);
+      // Use working version's forward vector calculation
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0; // Lock to dolly's yaw
       forward.applyQuaternion(dolly.quaternion);
-      forward.y = 0; // Keep horizontal
       forward.normalize();
       
-      const right = new THREE.Vector3().crossVectors(forward, dolly.up).normalize();
+      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
       
       // Horizontal movement ONLY (forward/back, strafe)
       dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
@@ -586,22 +559,15 @@ function vrMove(dt) {
         focusAnimation = null;
       }
       
-      // Speed boost with thumbstick press (button[3] for right stick)
-      const speedMultiplier = gamepad.buttons[3]?.pressed ? 3 : 1;
+      // Speed boost with grip/squeeze (like working version)
+      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
       
       // Smooth turning with right stick X
       dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
       
-      // Vertical movement with right stick Y
-      dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
-      
-      // Alternative: Use additional buttons for vertical movement
-      // X button (button[4]) for up, A button (button[0]) for down (when not measuring)
-      if (gamepad.buttons[4]?.pressed) { // X button
-        dolly.position.y += FLY_SPEED * speedMultiplier * dt;
-      }
-      if (gamepad.buttons[0]?.pressed && !ghostSpheres[hand].triggerPressed) { // A button
-        dolly.position.y -= FLY_SPEED * speedMultiplier * dt;
+      // Vertical movement with right stick Y (like working version)
+      if (Math.abs(y) > 0.1) {
+        dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
       }
     }
   }
