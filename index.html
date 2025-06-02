@@ -401,10 +401,24 @@ function initializeVRControllers() {
     if (controllerGrip1) dolly.add(controllerGrip1);
     if (controllerGrip2) dolly.add(controllerGrip2);
 
-    controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
-    controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
-    if (controllerGrip1) controllerGrip1.add(controllerModel1);
-    if (controllerGrip2) controllerGrip2.add(controllerModel2);
+    // Suppress controller model warnings by temporarily overriding console.warn
+    const originalWarn = console.warn;
+    console.warn = function(message, ...args) {
+      if (typeof message === 'string' && message.includes('Could not find') && message.includes('in the model')) {
+        return; // Suppress these specific warnings
+      }
+      originalWarn.apply(console, [message, ...args]);
+    };
+
+    try {
+      controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
+      controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
+      if (controllerGrip1) controllerGrip1.add(controllerModel1);
+      if (controllerGrip2) controllerGrip2.add(controllerModel2);
+    } finally {
+      // Restore original console.warn
+      console.warn = originalWarn;
+    }
 
     // Attach ghost spheres to controllers
     if (controller1) controller1.add(ghostSpheres.left);
