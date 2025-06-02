@@ -189,22 +189,30 @@ loader.load(MODEL_URL, gltf => {
 }, undefined, err => console.error(err));
 
 // Measurement spheres and line
-const spheres = [];
+const leftSphere = { mesh: null, button: { wasPressed: false } };
+const rightSphere = { mesh: null, button: { wasPressed: false } };
 const measurementLine = new THREE.Group();
 scene.add(measurementLine);
 
-function createMeasurementSphere(position) {
+function createMeasurementSphere(position, hand) {
   const geometry = new THREE.SphereGeometry(0.01, 16, 12); // 2cm diameter (1cm radius)
   const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const sphere = new THREE.Mesh(geometry, material);
   sphere.position.copy(position);
   scene.add(sphere);
   
-  spheres.push(sphere);
+  // Remove old sphere for this hand
+  if (hand === 'left' && leftSphere.mesh) {
+    scene.remove(leftSphere.mesh);
+  } else if (hand === 'right' && rightSphere.mesh) {
+    scene.remove(rightSphere.mesh);
+  }
   
-  // Keep only the last 2 spheres
-  if (spheres.length > 2) {
-    scene.remove(spheres.shift());
+  // Store new sphere
+  if (hand === 'left') {
+    leftSphere.mesh = sphere;
+  } else {
+    rightSphere.mesh = sphere;
   }
   
   updateMeasurement();
@@ -214,9 +222,9 @@ function updateMeasurement() {
   // Clear existing line and text
   measurementLine.clear();
   
-  if (spheres.length === 2) {
-    const start = spheres[0].position;
-    const end = spheres[1].position;
+  if (leftSphere.mesh && rightSphere.mesh) {
+    const start = leftSphere.mesh.position;
+    const end = rightSphere.mesh.position;
     
     // Create line
     const points = [start, end];
@@ -263,22 +271,26 @@ function vrMove(dt) {
     if (!src.gamepad) continue;
 
     const gamepad = src.gamepad;
+    const hand = src.handedness;
+    
     // Quest 2 uses axes[2] and axes[3] for thumbstick on both controllers
-    const x = gamepad.axes[2] || 0; // strafe
-    const y = gamepad.axes[3] || 0; // walk (-y = forward)
+    const x = gamepad.axes[2] || 0;
+    const y = gamepad.axes[3] || 0;
 
     // Check for trigger press to place measurement sphere
-    if (gamepad.buttons[0]?.pressed && !gamepad.buttons[0].wasPressed) {
+    const triggerPressed = gamepad.buttons[0]?.pressed;
+    const handData = hand === 'left' ? leftSphere : rightSphere;
+    
+    if (triggerPressed && !handData.button.wasPressed) {
       if (src.gripSpace) {
         const controllerPosition = new THREE.Vector3();
         const tempMatrix = new THREE.Matrix4();
         tempMatrix.fromArray(src.gripSpace.transform.matrix);
         controllerPosition.setFromMatrixPosition(tempMatrix);
-        createMeasurementSphere(controllerPosition);
+        createMeasurementSphere(controllerPosition, hand);
       }
     }
-    // Track button state for next frame
-    gamepad.buttons[0].wasPressed = gamepad.buttons[0].pressed;
+    handData.button.wasPressed = triggerPressed;
 
     if (src.handedness === 'left') {
       // Cancel focus animation if user starts moving
@@ -293,7 +305,6 @@ function vrMove(dt) {
       forward.y = 0;
       
       if (forward.lengthSq() < 1e-6) {
-        // looking straight up/down → fall back to dolly's yaw
         forward.set(0, 0, -1).applyQuaternion(dolly.quaternion);
       } else {
         forward.normalize();
@@ -305,25 +316,19 @@ function vrMove(dt) {
       const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
       const speed = MOVE_SPEED * speedMultiplier * dt;
 
-      // Horizontal movement ONLY (forward/back, strafe)
-      dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
+      dolly.position.addScaledVector(forward, -y * speed);
       dolly.position.addScaledVector(right, x * speed);
     }
 
     if (src.handedness === 'right') {
-      // Cancel focus animation if user starts turning/flying
       if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
         cancelAnimationFrame(focusAnimation);
         focusAnimation = null;
       }
 
-      // Speed boost with grip/squeeze  
       const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
-
-      // Smooth turning with right stick X
       dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
 
-      // Vertical movement with right stick Y
       if (Math.abs(y) > 0.1) {
         dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
       }
