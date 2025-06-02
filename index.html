@@ -41,7 +41,7 @@ import { LineMaterial } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/example
 import { LineGeometry } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/lines/LineGeometry.js';
 
 // ------------------------ Config ----------------------------
-const MODEL_URL  = 'models/kxi.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
+const MODEL_URL  = 'models/unknown_wreck_opt.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
 const MOVE_SPEED = 2.0;    // m/s base movement speed
 const TURN_SPEED = 1.5;    // rad/s turn speed
 const FLY_SPEED = 1.0;     // m/s vertical movement
@@ -278,14 +278,22 @@ function focusOnPoint(point) {
   focusAnimation = requestAnimationFrame(animate);
 }
 
-// Enhanced lighting for underwater feel
-scene.add(new THREE.AmbientLight(0x404080, 0.6));
-scene.add(new THREE.HemisphereLight(0x4080ff, 0x002040, 0.4));
+// Neutral lighting setup
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Neutral white ambient
+scene.add(ambientLight);
 
-// Add subtle directional light from above
-const sunlight = new THREE.DirectionalLight(0x8099ff, 0.5);
-sunlight.position.set(0, 100, 0);
-scene.add(sunlight);
+const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6); // White sky, dark ground
+scene.add(hemisphereLight);
+
+// Main directional light - neutral white
+const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+mainLight.position.set(10, 20, 10);
+scene.add(mainLight);
+
+// Fill light from opposite side for even illumination
+const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+fillLight.position.set(-10, 10, -10);
+scene.add(fillLight);
 
 // Loaders setup with better error handling and progress
 const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/draco/');
