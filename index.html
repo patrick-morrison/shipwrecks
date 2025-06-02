@@ -20,12 +20,9 @@
 </head>
 <body>
 <div id="info">
-  <strong>VR:</strong> Left stick: move/strafe | Right stick: turn/fly<br>
-  <strong>Speed:</strong> Press thumbstick (L3/R3) for 3x speed<br>
-  <strong>Vertical:</strong> Trigger/grip or X/Y buttons for up/down<br>
-  <strong>Teleport:</strong> Right trigger (A button) to teleport where pointing<br>
-  <strong>Measure:</strong> Y button to toggle | Trigger to place points<br>
-  <strong>Desktop:</strong> M to toggle measure mode | Click to measure | Double-click to focus | C to clear | Drag to orbit | Scroll to zoom
+  <strong>VR:</strong> Thumbsticks to move/fly/turn<br>
+  <strong>Desktop:</strong> Drag to orbit | Scroll to zoom | Click to measure<br>
+  <strong>Measure:</strong> Click panel to toggle.
 </div>
 
 <script type="module">
@@ -401,113 +398,72 @@ function createMeasurementDisplay(distance) {
   return measurementSprite;
 }
 
-// Initialize VR controllers once
-let controllersInitialized = false;
+// Initialize VR controllers - simplified approach
 const controllerModelFactory = new XRControllerModelFactory();
 let controller1, controller2, controllerGrip1, controllerGrip2;
 
-function initializeControllers() {
-  if (controllersInitialized) return;
+function setupControllers() {
+  const prevController1 = controller1;
+  const prevController2 = controller2;
   
-  // Get controller references
   controller1 = renderer.xr.getController(0);
   controller2 = renderer.xr.getController(1);
   
-  // Add controllers to dolly
-  dolly.add(controller1);
-  dolly.add(controller2);
+  // Add to dolly if new controllers and not already added
+  if (controller1 && controller1 !== prevController1 && !controller1.parent) {
+    dolly.add(controller1);
+    console.log('Added controller 1 to dolly');
+  }
+  if (controller2 && controller2 !== prevController2 && !controller2.parent) {
+    dolly.add(controller2);
+    console.log('Added controller 2 to dolly');
+  }
   
-  // Setup controller grips and models
-  controllerGrip1 = renderer.xr.getControllerGrip(0);
-  controllerGrip2 = renderer.xr.getControllerGrip(1);
-  
-  const controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
-  const controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
-  
-  controllerGrip1.add(controllerModel1);
-  controllerGrip2.add(controllerModel2);
-  
-  dolly.add(controllerGrip1);
-  dolly.add(controllerGrip2);
-  
-  // Add connected event listeners
-  controller1.addEventListener('connected', (event) => {
-    console.log('Controller 0 connected:', event.data);
-  });
-  
-  controller2.addEventListener('connected', (event) => {
-    console.log('Controller 1 connected:', event.data);
-  });
-  
-  // Make controller models transparent after they load
-  const makeTransparent = (model) => {
-    setTimeout(() => {
-      model.traverse(child => {
-        if (child.isMesh && child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach(mat => {
-              mat.transparent = true;
-              mat.opacity = 0.1;
-            });
-          } else {
-            child.material.transparent = true;
-            child.material.opacity = 0.1;
-          }
-        }
-      });
-    }, 1000);
-  };
-  
-  makeTransparent(controllerModel1);
-  makeTransparent(controllerModel2);
-  
-  controllersInitialized = true;
+  // Setup grips and models only once
+  if (!controllerGrip1) {
+    controllerGrip1 = renderer.xr.getControllerGrip(0);
+    controllerGrip2 = renderer.xr.getControllerGrip(1);
+    
+    const controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
+    const controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
+    
+    controllerGrip1.add(controllerModel1);
+    controllerGrip2.add(controllerModel2);
+    
+    dolly.add(controllerGrip1);
+    dolly.add(controllerGrip2);
+    
+    // Add connected event listeners
+    controller1?.addEventListener('connected', (event) => {
+      console.log('Controller 0 connected:', event.data);
+    });
+    
+    controller2?.addEventListener('connected', (event) => {
+      console.log('Controller 1 connected:', event.data);
+    });
+  }
 }
 
 // Enhanced VR movement - always smooth
 function vrMove(dt) {
   const session = renderer.xr.getSession();
-  if (!session) {
-    console.log('No VR session available');
+  if (!session || session.visibilityState !== 'visible') {
     return;
   }
 
-  console.log('VR session active, input sources:', session.inputSources.length);
-
-  // Get controller references - simple and direct
-  const controller1 = renderer.xr.getController(0);
-  const controller2 = renderer.xr.getController(1);
+  // Keep retrying until both controllers exist
+  setupControllers();
   
-  console.log('Controllers:', {
-    controller1: controller1 ? 'available' : 'null',
-    controller2: controller2 ? 'available' : 'null',
-    controller1Parent: controller1?.parent ? 'has parent' : 'no parent',
-    controller2Parent: controller2?.parent ? 'has parent' : 'no parent'
-  });
-  
-  // Add controllers to dolly if not already added (non-blocking check)
-  if (controller1 && !controller1.parent) {
-    dolly.add(controller1);
-    console.log('Added controller 1 to dolly');
-  }
-  if (controller2 && !controller2.parent) {
-    dolly.add(controller2);
-    console.log('Added controller 2 to dolly');
+  if (!controller1 || !controller2) {
+    console.log('Controllers not ready yet:', { controller1: !!controller1, controller2: !!controller2 });
+    return;
   }
 
   // Process input sources - improved with better error checking
   for (let i = 0; i < session.inputSources.length; i++) {
     const src = session.inputSources[i];
-    console.log(`Input source ${i}:`, {
-      exists: !!src,
-      handedness: src?.handedness,
-      hasGamepad: !!src?.gamepad,
-      buttonCount: src?.gamepad?.buttons?.length,
-      axesCount: src?.gamepad?.axes?.length
-    });
     
     if (!src || !src.gamepad || !src.gamepad.buttons || !src.gamepad.axes) {
-      console.log(`Skipping input source ${i} - missing required properties`);
       continue;
     }
 
@@ -928,6 +884,12 @@ let lastTime = 0;
 // Add VR session event listeners to handle mode transitions
 renderer.xr.addEventListener('sessionstart', () => {
   console.log('VR session started');
+  const session = renderer.xr.getSession();
+
+  // Setup controllers immediately and on input source changes
+  setupControllers();
+  session.addEventListener('inputsourceschange', setupControllers);
+  
   updateMeasurementPanel();
   syncMeasurementToVR();
 });
