@@ -200,16 +200,23 @@ function handleLeftController(lx, ly, gamepad, dt) {
   const fwd = new THREE.Vector3();
   camera.getWorldDirection(fwd);
 
+  // Keep only the yaw component of the headset,
+  // but avoid the zero-length trap.
+  fwd.y = 0;
+  if (fwd.lengthSq() < 1e-6) {
+    // looking straight up/down → fall back to dolly's yaw
+    fwd.set(0, 0, -1).applyQuaternion(dolly.quaternion);
+  } else {
+    fwd.normalize();
+  }
+
   const side = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
 
-  // Speed modifiers - Left stick press for speed boost
-  const speedMultiplier = gamepad.buttons[3]?.pressed ? 3 : 1; // Left stick press is button 3
+  // Speed modifiers - Left stick press for speed boost (corrected button index)
+  const speedMultiplier = gamepad.buttons[2]?.pressed ? 3 : 1; // Left stick press is button 2
   const currentSpeed = MOVE_SPEED * speedMultiplier * dt;
 
   // Horizontal movement ONLY (forward/back, strafe)
-  fwd.y = 0; // Keep horizontal
-  fwd.normalize();
-
   dolly.position.addScaledVector(fwd, -ly * currentSpeed); // Negative for forward
   dolly.position.addScaledVector(side, lx * currentSpeed);
 }
