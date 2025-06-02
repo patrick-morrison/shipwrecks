@@ -925,6 +925,144 @@ function clearDesktopMeasurement() {
 // Add this variable declaration near the top with other variables (around line 100)
 let lastTime = 0;
 
+// Add VR session event listeners to handle mode transitions
+renderer.xr.addEventListener('sessionstart', () => {
+  console.log('VR session started');
+  updateMeasurementPanel();
+  syncMeasurementToVR();
+});
+
+renderer.xr.addEventListener('sessionend', () => {
+  console.log('VR session ended');
+  
+  // Get the current camera position from the dolly before resetting
+  const vrCameraPosition = new THREE.Vector3();
+  camera.getWorldPosition(vrCameraPosition);
+  
+  // Reset the dolly position and rotation
+  dolly.position.set(0, 0, 0);
+  dolly.rotation.set(0, 0, 0);
+  
+  // Set the camera position directly (outside the dolly)
+  camera.position.copy(vrCameraPosition);
+  
+  // If we have measurements, set orbit target to measurement center
+  if (placedSpheres.length === 2) {
+    const measurementCenter = new THREE.Vector3();
+    measurementCenter.addVectors(placedSpheres[0].position, placedSpheres[1].position);
+    measurementCenter.multiplyScalar(0.5);
+    controls.target.copy(measurementCenter);
+    console.log('Set orbit controls target to measurement center:', measurementCenter);
+  } else {
+    // No measurements, keep the default target
+    controls.target.set(0, 0, 0);
+  }
+  
+  // Reset and enable orbit controls
+  controls.enabled = true;
+  controls.update();
+  
+  updateMeasurementPanel();
+  syncMeasurementToDesktop();
+});
+
+// Function to sync desktop measurements to VR format
+function syncMeasurementToVR() {
+  if (desktopMeasurementPoints.length === 2) {
+    // Clear existing VR measurements
+    placedSpheres.forEach(sphere => scene.remove(sphere));
+    placedSpheres.length = 0;
+    
+    // Convert desktop measurements to VR format
+    desktopMeasurementPoints.forEach(point => {
+      const newSphere = new THREE.Mesh(sphereGeometry, placedMaterial);
+      newSphere.position.copy(point.position);
+      scene.add(newSphere);
+      placedSpheres.push(newSphere);
+    });
+    
+    // Create VR line if we have 2 points
+    if (placedSpheres.length === 2) {
+      const distance = placedSpheres[0].position.distanceTo(placedSpheres[1].position);
+      
+      const lineGeometry = new LineGeometry();
+      const positions = [];
+      positions.push(
+        placedSpheres[0].position.x, placedSpheres[0].position.y, placedSpheres[0].position.z,
+        placedSpheres[1].position.x, placedSpheres[1].position.y, placedSpheres[1].position.z
+      );
+      lineGeometry.setPositions(positions);
+      
+      if (connectionLine) {
+        scene.remove(connectionLine);
+      }
+      connectionLine = new Line2(lineGeometry, vrLineMaterial);
+      connectionLine.computeLineDistances();
+      scene.add(connectionLine);
+      
+      // Create measurement display
+      createMeasurementDisplay(distance);
+      if (measurementSprite && !scene.children.includes(measurementSprite)) {
+        scene.add(measurementSprite);
+      }
+    }
+    
+    console.log('Synced desktop measurements to VR format');
+  }
+}
+
+// Function to sync VR measurements to desktop format
+function syncMeasurementToDesktop() {
+  if (placedSpheres.length === 2) {
+    // Clear existing desktop measurements
+    desktopMeasurementPoints.forEach(sphere => scene.remove(sphere));
+    desktopMeasurementPoints.length = 0;
+    
+    // Convert VR measurements to desktop format
+    placedSpheres.forEach(sphere => {
+      const newSphere = new THREE.Mesh(sphereGeometry, placedMaterial);
+      newSphere.position.copy(sphere.position);
+      scene.add(newSphere);
+      desktopMeasurementPoints.push(newSphere);
+    });
+    
+    // Create desktop line if we have 2 points
+    if (desktopMeasurementPoints.length === 2) {
+      const lineGeometry = new LineGeometry();
+      const positions = [];
+      positions.push(
+        desktopMeasurementPoints[0].position.x, desktopMeasurementPoints[0].position.y, desktopMeasurementPoints[0].position.z,
+        desktopMeasurementPoints[1].position.x, desktopMeasurementPoints[1].position.y, desktopMeasurementPoints[1].position.z
+      );
+      lineGeometry.setPositions(positions);
+      
+      if (desktopMeasurementLine) {
+        scene.remove(desktopMeasurementLine);
+      }
+      desktopMeasurementLine = new Line2(lineGeometry, desktopLineMaterial);
+      desktopMeasurementLine.computeLineDistances();
+      scene.add(desktopMeasurementLine);
+      
+      // Enable desktop measurement mode if we have measurements
+      desktopMeasurementMode = true;
+    }
+    
+    // Hide VR measurement sprite
+    if (measurementSprite) {
+      measurementSprite.visible = false;
+    }
+    
+    console.log('Synced VR measurements to desktop format');
+    
+    // Force panel update after sync
+    updateMeasurementPanel();
+  } else if (placedSpheres.length === 0) {
+    // If no VR measurements, ensure desktop mode is properly reset
+    desktopMeasurementMode = false;
+    updateMeasurementPanel();
+  }
+}
+
 // Update the render loop to handle desktop measurement line pulsing and sprite positioning
 renderer.setAnimationLoop(time => {
   const t = time;
@@ -938,20 +1076,22 @@ renderer.setAnimationLoop(time => {
   desktopLineMaterial.resolution.set(width, height);
 
   // Update desktop measurement line pulsing effect - 50% to 90% opacity
-  if (desktopMeasurementLine) {
+  if (desktopMeasurementLine && !renderer.xr.isPresenting) {
     const pulse = (Math.sin(t * 0.004) + 1) * 0.2 + 0.5;
     desktopLineMaterial.opacity = pulse;
     desktopMeasurementLine.visible = true; // Force visible
+  } else if (desktopMeasurementLine) {
+    desktopMeasurementLine.visible = false; // Hide in VR
   }
   
   // Update VR measurement display - 50% to 90% opacity
-  if (connectionLine && measurementSystemEnabled) {
+  if (connectionLine && measurementSystemEnabled && renderer.xr.isPresenting) {
     const pulse = (Math.sin(t * 0.003) + 1) * 0.2 + 0.5;
     vrLineMaterial.opacity = pulse;
     connectionLine.visible = true; // Force visible
     
     // Position measurement sprite at the center of the line
-    if (measurementSprite && renderer.xr.isPresenting && placedSpheres.length === 2) {
+    if (measurementSprite && placedSpheres.length === 2) {
       try {
         // Calculate midpoint between the two spheres
         const midpoint = new THREE.Vector3();
@@ -976,15 +1116,18 @@ renderer.setAnimationLoop(time => {
         console.error('Error positioning measurement sprite:', error);
       }
     }
-  } else {
-    if (measurementSprite && renderer.xr.isPresenting) {
-      measurementSprite.visible = false;
-    }
+  } else if (connectionLine) {
+    connectionLine.visible = false; // Hide in desktop
   }
   
-  if (renderer.xr.isPresenting) vrMove(dt);
-  controls.enabled = !renderer.xr.isPresenting;
-  controls.update();
+  if (renderer.xr.isPresenting) {
+    vrMove(dt);
+    controls.enabled = false;
+  } else {
+    controls.enabled = true;
+    controls.update();
+  }
+  
   renderer.render(scene, camera);
 });
 
