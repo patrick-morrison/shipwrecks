@@ -440,45 +440,48 @@ const controllerModelFactory = new XRControllerModelFactory();
 let controller1, controller2, controllerGrip1, controllerGrip2;
 
 function setupControllers() {
-  const prevController1 = controller1;
-  const prevController2 = controller2;
-  
   controller1 = renderer.xr.getController(0);
   controller2 = renderer.xr.getController(1);
-  
-  // Add to dolly if new controllers and not already added
-  if (controller1 && controller1 !== prevController1 && !controller1.parent) {
-    dolly.add(controller1);
-    console.log('Added controller 1 to dolly');
-  }
-  if (controller2 && controller2 !== prevController2 && !controller2.parent) {
-    dolly.add(controller2);
-    console.log('Added controller 2 to dolly');
-  }
-  
-  // Setup grips and models only once
-  if (!controllerGrip1) {
-    controllerGrip1 = renderer.xr.getControllerGrip(0);
-    controllerGrip2 = renderer.xr.getControllerGrip(1);
-    
-    const controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
-    const controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
-    
-    controllerGrip1.add(controllerModel1);
-    controllerGrip2.add(controllerModel2);
-    
-    dolly.add(controllerGrip1);
-    dolly.add(controllerGrip2);
-    
-    // Add connected event listeners
-    controller1?.addEventListener('connected', (event) => {
-      console.log('Controller 0 connected:', event.data);
-    });
-    
-    controller2?.addEventListener('connected', (event) => {
-      console.log('Controller 1 connected:', event.data);
-    });
-  }
+  controllerGrip1 = renderer.xr.getControllerGrip(0);
+  controllerGrip2 = renderer.xr.getControllerGrip(1);
+
+  controller1.addEventListener('connected', (event) => {
+    controller1.userData.inputSource = event.data;
+    if (!controller1.userData.initialized) {
+      dolly.add(controller1);
+      const model = controllerModelFactory.createControllerModel(controllerGrip1);
+      controllerGrip1.add(model);
+      dolly.add(controllerGrip1);
+      controller1.userData.initialized = true;
+      console.log('✅ Controller 1 truly connected:', event.data);
+    }
+  });
+
+  controller2.addEventListener('connected', (event) => {
+    controller2.userData.inputSource = event.data;
+    if (!controller2.userData.initialized) {
+      dolly.add(controller2);
+      const model = controllerModelFactory.createControllerModel(controllerGrip2);
+      controllerGrip2.add(model);
+      dolly.add(controllerGrip2);
+      controller2.userData.initialized = true;
+      console.log('✅ Controller 2 truly connected:', event.data);
+    }
+  });
+
+  controller1.addEventListener('disconnected', () => {
+    dolly.remove(controller1);
+    dolly.remove(controllerGrip1);
+    controller1.userData.initialized = false;
+    console.log('❌ Controller 1 disconnected');
+  });
+
+  controller2.addEventListener('disconnected', () => {
+    dolly.remove(controller2);
+    dolly.remove(controllerGrip2);
+    controller2.userData.initialized = false;
+    console.log('❌ Controller 2 disconnected');
+  });
 }
 
 // Enhanced VR movement - always smooth
@@ -488,12 +491,8 @@ function vrMove(dt) {
     return;
   }
 
-  // Keep retrying until both controllers exist
-  setupControllers();
-  
   if (!controller1 || !controller2) {
-    console.log('Controllers not ready yet:', { controller1: !!controller1, controller2: !!controller2 });
-    return;
+    return; // Controllers should be initialized by events, not here
   }
 
   // Process input sources - improved with better error checking
@@ -917,10 +916,22 @@ renderer.xr.addEventListener('sessionstart', () => {
   console.log('VR session started');
   const session = renderer.xr.getSession();
 
-  // Setup controllers immediately and on input source changes
+  function onInputSourcesChange() {
+    console.log('Input sources changed, reinitializing controllers');
+    setupControllers();
+  }
+
+  session.addEventListener('inputsourceschange', onInputSourcesChange);
+
+  // Immediately attempt setup in case controllers are already connected
   setupControllers();
-  session.addEventListener('inputsourceschange', setupControllers);
-  
+
+  // Manually fire 'connected' for any sources already present
+  session.inputSources.forEach(src => {
+    if (src.handedness === 'left')  controller1.dispatchEvent({ type:'connected',    data:src });
+    if (src.handedness === 'right') controller2.dispatchEvent({ type:'connected',    data:src });
+  });
+
   updateMeasurementPanel();
   syncMeasurementToVR();
 });
@@ -1136,6 +1147,9 @@ renderer.setAnimationLoop(time => {
 
 // Initialize panel state
 updateMeasurementPanel();
+
+// Ensure controllers hook into WebXR connected events immediately
+setupControllers();
 </script>
 </body>
 </html>
