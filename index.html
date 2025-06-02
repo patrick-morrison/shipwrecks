@@ -968,6 +968,10 @@ renderer.xr.addEventListener('sessionend', () => {
   
   updateMeasurementPanel();
   syncMeasurementToDesktop();
+  
+  // Hide ghost spheres when swapping back to desktop
+  ghostSpheres.left.visible = false;
+  ghostSpheres.right.visible = false;
 });
 
 // Function to sync desktop measurements to VR format
