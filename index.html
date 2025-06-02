@@ -35,6 +35,7 @@ import { DRACOLoader } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples
 import { KTX2Loader }  from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/meshopt_decoder.module.js';
 import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/XRControllerModelFactory.js';
 
 // ------------------------ Config ----------------------------
 const MODEL_URL  = 'models/kxi.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
@@ -93,18 +94,18 @@ const sphereGeometry = new THREE.SphereGeometry(0.01, 8, 6); // 2cm radius, low-
 const ghostMaterial = new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.2});
 const placedMaterial = new THREE.MeshBasicMaterial({color: 0xffffff});
 
-const controllerSpheres = {
-  left: { ghost: null, placed: null },
-  right: { ghost: null, placed: null }
+// Just two spheres total
+const placedSpheres = [];
+const ghostSpheres = {
+  left: new THREE.Mesh(sphereGeometry, ghostMaterial),
+  right: new THREE.Mesh(sphereGeometry, ghostMaterial)
 };
 
-// Create ghost spheres
-controllerSpheres.left.ghost = new THREE.Mesh(sphereGeometry, ghostMaterial);
-controllerSpheres.right.ghost = new THREE.Mesh(sphereGeometry, ghostMaterial);
-controllerSpheres.left.ghost.visible = false;
-controllerSpheres.right.ghost.visible = false;
-scene.add(controllerSpheres.left.ghost);
-scene.add(controllerSpheres.right.ghost);
+// Add ghost spheres to scene
+ghostSpheres.left.visible = false;
+ghostSpheres.right.visible = false;
+scene.add(ghostSpheres.left);
+scene.add(ghostSpheres.right);
 
 // Double-click focus system
 let lastClickTime = 0;
@@ -214,6 +215,24 @@ function vrMove(dt) {
   // Get controller references
   const controller1 = renderer.xr.getController(0);
   const controller2 = renderer.xr.getController(1);
+  
+  // Single controller model factory
+  const controllerModelFactory = new XRControllerModelFactory();
+  
+  // Add controllers to dolly and scene if not already added
+  if (!dolly.children.includes(controller1)) {
+    dolly.add(controller1);
+    const controllerGrip1 = renderer.xr.getControllerGrip(0);
+    controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+    dolly.add(controllerGrip1);
+  }
+  
+  if (!dolly.children.includes(controller2)) {
+    dolly.add(controller2);
+    const controllerGrip2 = renderer.xr.getControllerGrip(1);
+    controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+    dolly.add(controllerGrip2);
+  }
 
   for (const src of session.inputSources) {
     if (!src.gamepad) continue;
@@ -223,23 +242,28 @@ function vrMove(dt) {
     const controllerIndex = hand === 'left' ? 0 : 1;
     const controller = controllerIndex === 0 ? controller1 : controller2;
     
-    // Update controller sphere position using actual controller position
-    if (controllerSpheres[hand] && controller) {
-      // Get world position of controller
-      controller.getWorldPosition(controllerSpheres[hand].ghost.position);
-      controllerSpheres[hand].ghost.visible = true;
+    // Initialize trigger state if not exists
+    if (!ghostSpheres[hand].triggerPressed) ghostSpheres[hand].triggerPressed = false;
+    
+    // Update ghost sphere position
+    if (ghostSpheres[hand] && controller) {
+      controller.getWorldPosition(ghostSpheres[hand].position);
+      ghostSpheres[hand].visible = true;
       
       // Check trigger press (button 0)
-      if (gamepad.buttons[0]?.pressed && !controllerSpheres[hand].triggerPressed) {
-        // Place sphere
-        if (controllerSpheres[hand].placed) {
-          scene.remove(controllerSpheres[hand].placed);
+      if (gamepad.buttons[0]?.pressed && !ghostSpheres[hand].triggerPressed) {
+        // Remove oldest sphere if we have 2
+        if (placedSpheres.length >= 2) {
+          scene.remove(placedSpheres.shift());
         }
-        controllerSpheres[hand].placed = new THREE.Mesh(sphereGeometry, placedMaterial);
-        controllerSpheres[hand].placed.position.copy(controllerSpheres[hand].ghost.position);
-        scene.add(controllerSpheres[hand].placed);
+        
+        // Place new sphere
+        const newSphere = new THREE.Mesh(sphereGeometry, placedMaterial);
+        newSphere.position.copy(ghostSpheres[hand].position);
+        scene.add(newSphere);
+        placedSpheres.push(newSphere);
       }
-      controllerSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
+      ghostSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
     }
 
     // Quest 2 uses axes[2] and axes[3] for thumbstick on both controllers
