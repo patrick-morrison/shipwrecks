@@ -117,23 +117,25 @@ const lineMaterial = new THREE.LineBasicMaterial({
 // Replace the VR line material with proper initialization
 const vrLineMaterial = new LineMaterial({
   color: 0xffffff,
-  linewidth: 3, // Much thicker for testing - 5 pixels
+  linewidth: 3,
   transparent: true,
   opacity: 0.8,
   depthTest: false,
   vertexColors: false,
-  dashed: false
+  dashed: false,
+  resolution: new THREE.Vector2(window.innerWidth, window.innerHeight) // Add this
 });
 
 // Replace the desktop line material with proper initialization  
 const desktopLineMaterial = new LineMaterial({
   color: 0xffffff,
-  linewidth: 3, // Much thicker for testing - 5 pixels
+  linewidth: 3,
   transparent: true,
   opacity: 0.8,
   depthTest: false,
   vertexColors: false,
-  dashed: false
+  dashed: false,
+  resolution: new THREE.Vector2(window.innerWidth, window.innerHeight) // Add this
 });
 
 // Add ghost spheres to scene
