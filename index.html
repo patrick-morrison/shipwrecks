@@ -503,9 +503,9 @@ function vrMove(dt) {
       ghostSpheres[hand].triggerPressed = gamepad.buttons[0]?.pressed;
     }
 
-    // Movement controls - FIXED thumbstick axes
-    const x = gamepad.axes[2] || 0; // Right stick X / Left stick X
-    const y = gamepad.axes[3] || 0; // Right stick Y / Left stick Y
+    // Movement controls - Use working version's movement logic
+    const x = gamepad.axes[2] || 0; // strafe
+    const y = gamepad.axes[3] || 0; // walk (-y = forward)
 
     if (src.handedness === 'left') {
       // Cancel focus animation if user starts moving
@@ -513,25 +513,28 @@ function vrMove(dt) {
         cancelAnimationFrame(focusAnimation);
         focusAnimation = null;
       }
+
+      // Get movement directions relative to camera - USE WORKING VERSION METHOD
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0;
+      
+      if (forward.lengthSq() < 1e-6) {
+        // looking straight up/down → fall back to dolly's yaw
+        forward.set(0, 0, -1).applyQuaternion(dolly.quaternion);
+      } else {
+        forward.normalize();
+      }
+
+      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
       
       // Speed boost with grip/squeeze
       const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
       const speed = MOVE_SPEED * speedMultiplier * dt;
-      
-      // Get forward direction from camera
-      const forward = new THREE.Vector3(0, 0, -1);
-      forward.applyQuaternion(camera.quaternion);
-      forward.y = 0; // Keep movement horizontal
-      forward.normalize();
-      
-      const right = new THREE.Vector3(1, 0, 0);
-      right.applyQuaternion(camera.quaternion);
-      right.y = 0;
-      right.normalize();
-      
-      // Apply movement
-      dolly.position.addScaledVector(forward, y * speed); // Y axis for forward/back
-      dolly.position.addScaledVector(right, x * speed);   // X axis for strafe
+
+      // Horizontal movement ONLY (forward/back, strafe) - CORRECT DIRECTIONS
+      dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
+      dolly.position.addScaledVector(right, x * speed);
     }
     
     if (src.handedness === 'right') {
@@ -540,16 +543,16 @@ function vrMove(dt) {
         cancelAnimationFrame(focusAnimation);
         focusAnimation = null;
       }
-      
-      // Speed boost with grip/squeeze
+
+      // Speed boost with grip/squeeze  
       const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
-      
+
       // Smooth turning with right stick X
       dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
-      
-      // Vertical movement with right stick Y
+
+      // Vertical movement with right stick Y - CORRECT DIRECTION
       if (Math.abs(y) > 0.1) {
-        dolly.position.y += y * FLY_SPEED * speedMultiplier * dt;
+        dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
       }
     }
   }
