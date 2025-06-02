@@ -188,80 +188,60 @@ loader.load(MODEL_URL, gltf => {
   camera.position.set(0, sz*0.3, sz*0.8);
 }, undefined, err => console.error(err));
 
-// Movement handlers
-function handleLeftController(lx, ly, gamepad, dt) {
-  // Cancel focus animation if user starts moving
-  if (focusAnimation && (Math.abs(lx) > 0.1 || Math.abs(ly) > 0.1)) {
-    cancelAnimationFrame(focusAnimation);
-    focusAnimation = null;
-  }
-
-  // Get movement directions relative to camera
-  const fwd = new THREE.Vector3();
-  camera.getWorldDirection(fwd);
-
-  // Keep only the yaw component of the headset,
-  // but avoid the zero-length trap.
-  fwd.y = 0;
-  if (fwd.lengthSq() < 1e-6) {
-    // looking straight up/down → fall back to dolly's yaw
-    fwd.set(0, 0, -1).applyQuaternion(dolly.quaternion);
-  } else {
-    fwd.normalize();
-  }
-
-  const side = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
-
-  // Speed modifiers - Left stick press for speed boost (corrected button index)
-  const speedMultiplier = gamepad.buttons[2]?.pressed ? 3 : 1; // Left stick press is button 2
-  const currentSpeed = MOVE_SPEED * speedMultiplier * dt;
-
-  // Horizontal movement ONLY (forward/back, strafe)
-  dolly.position.addScaledVector(fwd, -ly * currentSpeed); // Negative for forward
-  dolly.position.addScaledVector(side, lx * currentSpeed);
-}
-
-function handleRightController(rx, ry, gamepad, dt) {
-  // Cancel focus animation if user starts turning/flying
-  if (focusAnimation && (Math.abs(rx) > 0.1 || Math.abs(ry) > 0.1)) {
-    cancelAnimationFrame(focusAnimation);
-    focusAnimation = null;
-  }
-
-  // Speed modifiers - Grip button for speed boost
-  const speedMultiplier = gamepad.buttons[2]?.pressed ? 3 : 1; // Grip button is button 2
-  const currentFlySpeed = FLY_SPEED * speedMultiplier * dt;
-
-  // Smooth turning with right stick X
-  dolly.rotation.y -= rx * TURN_SPEED * dt;
-
-  // Vertical movement with right stick Y
-  if (Math.abs(ry) > 0.1) {
-    dolly.position.y -= ry * currentFlySpeed;
-  }
-}
-
 // Enhanced VR movement - always smooth
 function vrMove(dt) {
   const session = renderer.xr.getSession();
   if (!session) return;
 
   for (const src of session.inputSources) {
-    if (!src.gamepad || !src.handedness) continue;
+    if (!src.gamepad) continue;
 
     const gamepad = src.gamepad;
     // Quest 2 uses axes[2] and axes[3] for thumbstick on both controllers
-    const lx = gamepad.axes[2]; // thumbstick X
-    const ly = gamepad.axes[3]; // thumbstick Y
-    const rx = lx; // right controller uses same axes
-    const ry = ly;
+    const x = gamepad.axes[2] || 0; // strafe
+    const y = gamepad.axes[3] || 0; // walk (-y = forward)
 
     if (src.handedness === 'left') {
-      handleLeftController(lx, ly, gamepad, dt);
+      // Cancel focus animation if user starts moving
+      if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
+        cancelAnimationFrame(focusAnimation);
+        focusAnimation = null;
+      }
+
+      // Get movement directions relative to camera
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0;
+      
+      if (forward.lengthSq() < 1e-6) {
+        // looking straight up/down → fall back to dolly's yaw
+        forward.set(0, 0, -1).applyQuaternion(dolly.quaternion);
+      } else {
+        forward.normalize();
+      }
+
+      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+      const speed = MOVE_SPEED * dt;
+
+      // Horizontal movement ONLY (forward/back, strafe)
+      dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
+      dolly.position.addScaledVector(right, x * speed);
     }
 
     if (src.handedness === 'right') {
-      handleRightController(rx, ry, gamepad, dt);
+      // Cancel focus animation if user starts turning/flying
+      if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
+        cancelAnimationFrame(focusAnimation);
+        focusAnimation = null;
+      }
+
+      // Smooth turning with right stick X
+      dolly.rotation.y -= x * TURN_SPEED * dt;
+
+      // Vertical movement with right stick Y
+      if (Math.abs(y) > 0.1) {
+        dolly.position.y -= y * FLY_SPEED * dt;
+      }
     }
   }
 }
