@@ -500,8 +500,9 @@ function vrMove(dt) {
   for (let i = 0; i < session.inputSources.length; i++) {
     const src = session.inputSources[i];
     
-    if (!src || !src.gamepad || !src.gamepad.buttons || !src.gamepad.axes) {
-      continue;
+    // Enhanced validation - check if controller is fully ready
+    if (!src || !src.gamepad || !src.gamepad.buttons || !src.gamepad.axes || src.gamepad.axes.length < 4) {
+      continue; // Graceful skipping - continue to next controller if current one isn't ready
     }
 
     const gamepad = src.gamepad;
@@ -648,16 +649,9 @@ function vrMove(dt) {
       ghostSpheres[hand].visible = false;
     }
 
-    // Movement controls with improved axis checking
-    const axes = gamepad.axes;
-    if (!axes || axes.length < 4) {
-      console.log(`${hand} controller has insufficient axes:`, axes?.length);
-      continue;
-    }
-    
-    // Quest 2 uses axes[2] and axes[3] for thumbstick on both controllers
-    const x = axes[2] || 0; // strafe/turn
-    const y = axes[3] || 0; // walk/fly (-y = forward)
+    // Movement controls - axes already validated above
+    const x = gamepad.axes[2] || 0; // strafe/turn
+    const y = gamepad.axes[3] || 0; // walk/fly (-y = forward)
 
     // Log movement if significant
     if (Math.abs(x) > 0.1 || Math.abs(y) > 0.1) {
