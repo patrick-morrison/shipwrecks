@@ -96,8 +96,8 @@ function vrMove(dt){
     if(src.handedness==='left'){
       const fwd=new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y=0; fwd.normalize();
       const side=new THREE.Vector3().crossVectors(camera.up,fwd).normalize();
-      dolly.position.addScaledVector(fwd,-ly*MOVE_SPEED*dt);
-      dolly.position.addScaledVector(side,lx*MOVE_SPEED*dt);
+      dolly.position.addScaledVector(fwd,-ly*MOVE_SPEED);  // Remove dt multiplication
+      dolly.position.addScaledVector(side,lx*MOVE_SPEED);  // Remove dt multiplication
     }else{
       dolly.rotation.y -= rx*TURN_SPEED*dt;
     }
@@ -105,7 +105,7 @@ function vrMove(dt){
 }
 
 // Render loop
-let tPrev=0;
+let tPrev=performance.now();  // Use performance.now() for better timing
 renderer.setAnimationLoop(t=>{
   const dt=(t-tPrev)/1000; tPrev=t;
   if(renderer.xr.isPresenting) vrMove(dt);
