@@ -376,45 +376,59 @@ function createMeasurementDisplay(distance) {
   return measurementSprite;
 }
 
-// Replace the vrMove function and add proper controller initialization
+// Remove the immediate controller initialization (lines around 290-310)
+// Replace with this VR session event handling:
 
-// Add controller initialization after renderer setup (around line 60)
-const controllerModelFactory = new XRControllerModelFactory();
-const controller1 = renderer.xr.getController(0);
-const controller2 = renderer.xr.getController(1);
-const controllerGrip1 = renderer.xr.getControllerGrip(0);
-const controllerGrip2 = renderer.xr.getControllerGrip(1);
+// Initialize controllers when VR session starts
+let controller1, controller2, controllerGrip1, controllerGrip2;
+let controllerModel1, controllerModel2;
 
-// Add controllers to dolly immediately
-dolly.add(controller1);
-dolly.add(controller2);
-dolly.add(controllerGrip1);
-dolly.add(controllerGrip2);
+function initializeVRControllers() {
+  if (controller1) return; // Already initialized
+  
+  const controllerModelFactory = new XRControllerModelFactory();
+  
+  controller1 = renderer.xr.getController(0);
+  controller2 = renderer.xr.getController(1);
+  controllerGrip1 = renderer.xr.getControllerGrip(0);
+  controllerGrip2 = renderer.xr.getControllerGrip(1);
 
-// Add controller models
-const controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
-const controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
-controllerGrip1.add(controllerModel1);
-controllerGrip2.add(controllerModel2);
+  // Add controllers to dolly
+  dolly.add(controller1);
+  dolly.add(controller2);
+  dolly.add(controllerGrip1);
+  dolly.add(controllerGrip2);
 
-// Make controllers visible (remove transparency)
-function setupControllerVisibility(model) {
-  model.traverse(child => {
-    if (child.isMesh) {
-      child.material = child.material.clone();
-      child.material.transparent = false;
-      child.material.opacity = 1.0;
-    }
-  });
+  // Add controller models
+  controllerModel1 = controllerModelFactory.createControllerModel(controllerGrip1);
+  controllerModel2 = controllerModelFactory.createControllerModel(controllerGrip2);
+  controllerGrip1.add(controllerModel1);
+  controllerGrip2.add(controllerModel2);
+
+  // Make controllers visible
+  function setupControllerVisibility(model) {
+    model.traverse(child => {
+      if (child.isMesh) {
+        child.material = child.material.clone();
+        child.material.transparent = false;
+        child.material.opacity = 1.0;
+      }
+    });
+  }
+
+  controllerGrip1.addEventListener('connected', () => setupControllerVisibility(controllerModel1));
+  controllerGrip2.addEventListener('connected', () => setupControllerVisibility(controllerModel2));
 }
 
-controllerGrip1.addEventListener('connected', () => setupControllerVisibility(controllerModel1));
-controllerGrip2.addEventListener('connected', () => setupControllerVisibility(controllerModel2));
+// Listen for VR session start/end
+renderer.xr.addEventListener('sessionstart', () => {
+  initializeVRControllers();
+});
 
-// Enhanced VR movement - always smooth
+// Update the vrMove function to handle undefined controllers gracefully:
 function vrMove(dt) {
   const session = renderer.xr.getSession();
-  if (!session) return;
+  if (!session || !controller1 || !controller2) return;
 
   for (const src of session.inputSources) {
     if (!src.gamepad) continue;
