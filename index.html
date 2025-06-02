@@ -67,6 +67,14 @@ controls.dampingFactor = 0.08;
 controls.maxDistance = 100;
 controls.minDistance = 0.5;
 
+// Cancel focus animation when user manually controls camera
+controls.addEventListener('start', () => {
+  if (focusAnimation) {
+    cancelAnimationFrame(focusAnimation);
+    focusAnimation = null;
+  }
+});
+
 // Movement state
 const moveState = {
   isMoving: false,
@@ -83,6 +91,7 @@ const mouse = new THREE.Vector2();
 // Double-click focus system
 let lastClickTime = 0;
 const DOUBLE_CLICK_TIME = 300;
+let focusAnimation = null; // Track ongoing animation
 
 window.addEventListener('resize',()=>{
   camera.aspect = window.innerWidth/window.innerHeight;
@@ -114,6 +123,12 @@ function onMouseClick(event) {
 }
 
 function focusOnPoint(point) {
+  // Cancel any existing focus animation
+  if (focusAnimation) {
+    cancelAnimationFrame(focusAnimation);
+    focusAnimation = null;
+  }
+  
   const startTarget = controls.target.clone();
   const startPosition = camera.position.clone();
   
@@ -134,11 +149,13 @@ function focusOnPoint(point) {
     camera.position.lerpVectors(startPosition, newPosition, eased);
     
     if (progress < 1) {
-      requestAnimationFrame(animate);
+      focusAnimation = requestAnimationFrame(animate);
+    } else {
+      focusAnimation = null; // Animation complete
     }
   }
   
-  animate();
+  focusAnimation = requestAnimationFrame(animate);
 }
 
 // Enhanced lighting for underwater feel
@@ -193,6 +210,12 @@ function vrMove(dt){
 }
 
 function handleLeftController(lx, ly, gamepad, dt) {
+  // Cancel focus animation if user starts moving
+  if (focusAnimation && (Math.abs(lx) > 0.1 || Math.abs(ly) > 0.1)) {
+    cancelAnimationFrame(focusAnimation);
+    focusAnimation = null;
+  }
+  
   // Get movement directions relative to camera
   const fwd = new THREE.Vector3();
   camera.getWorldDirection(fwd);
@@ -201,7 +224,7 @@ function handleLeftController(lx, ly, gamepad, dt) {
   const up = new THREE.Vector3(0, 1, 0);
   
   // Speed modifiers - Fixed button index for thumbstick press
-  const speedMultiplier = gamepad.buttons[10]?.pressed ? 3 : 1; // Left stick press (was 3)
+  const speedMultiplier = gamepad.buttons[10]?.pressed ? 3 : 1; // Left stick press
   const currentSpeed = MOVE_SPEED * speedMultiplier * dt;
   
   // Horizontal movement (forward/back, strafe)
@@ -229,16 +252,22 @@ function handleLeftController(lx, ly, gamepad, dt) {
 }
 
 function handleRightController(rx, ry, gamepad, dt) {
+  // Cancel focus animation if user starts turning/flying
+  if (focusAnimation && (Math.abs(rx) > 0.1 || Math.abs(ry) > 0.1)) {
+    cancelAnimationFrame(focusAnimation);
+    focusAnimation = null;
+  }
+  
   // Always smooth turning
   dolly.rotation.y -= rx * TURN_SPEED * dt;
   
   // Vertical movement with right stick Y - Fixed direction
   if (Math.abs(ry) > 0.1) {
-    dolly.position.y -= ry * FLY_SPEED * dt; // Changed from += to -=
+    dolly.position.y -= ry * FLY_SPEED * dt;
   }
   
   // Teleport with right trigger - Fixed button index
-  if (gamepad.buttons[0]?.pressed && !moveState.buttonPressed) { // Was buttons[1]
+  if (gamepad.buttons[0]?.pressed && !moveState.buttonPressed) {
     moveState.buttonPressed = true;
     teleportToSurface(rx, ry);
   } else if (!gamepad.buttons[0]?.pressed) {
