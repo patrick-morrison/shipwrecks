@@ -378,6 +378,9 @@ function createMeasurementDisplay(distance) {
   return measurementSprite;
 }
 
+// Move this outside the vrMove function - declare it globally after other declarations
+const controllerModelFactory = new XRControllerModelFactory();
+
 // Enhanced VR movement - always smooth
 function vrMove(dt) {
   const session = renderer.xr.getSession();
@@ -386,9 +389,6 @@ function vrMove(dt) {
   // Get controller references
   const controller1 = renderer.xr.getController(0);
   const controller2 = renderer.xr.getController(1);
-  
-  // Single controller model factory
-  const controllerModelFactory = new XRControllerModelFactory();
   
   // Add controllers to dolly and scene if not already added
   if (!dolly.children.includes(controller1)) {
@@ -476,6 +476,7 @@ function vrMove(dt) {
             measurementSprite.visible = false;
           }
         }
+        updateMeasurementPanel();
       }
       yButtonPressed = yButtonCurrentlyPressed;
     }
@@ -551,8 +552,8 @@ function vrMove(dt) {
     }
 
     // Quest 2 uses axes[2] and axes[3] for thumbstick on both controllers
-    const x = gamepad.axes[2] || 0; // strafe
-    const y = gamepad.axes[3] || 0; // walk (-y = forward)
+    const x = gamepad.axes[2] || 0; // strafe/turn
+    const y = gamepad.axes[3] || 0; // walk/fly
 
     if (src.handedness === 'left') {
       // Cancel focus animation if user starts moving
@@ -561,17 +562,17 @@ function vrMove(dt) {
         focusAnimation = null;
       }
       
-      // Speed boost with grip/squeeze
-      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
+      // Speed boost with thumbstick press (button[3] for left stick)
+      const speedMultiplier = gamepad.buttons[3]?.pressed ? 3 : 1;
       const speed = MOVE_SPEED * speedMultiplier * dt;
       
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      forward.y = 0; // Lock to dolly's yaw
+      // Fixed forward vector calculation
+      const forward = new THREE.Vector3(0, 0, -1);
       forward.applyQuaternion(dolly.quaternion);
+      forward.y = 0; // Keep horizontal
       forward.normalize();
       
-      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+      const right = new THREE.Vector3().crossVectors(forward, dolly.up).normalize();
       
       // Horizontal movement ONLY (forward/back, strafe)
       dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
@@ -585,15 +586,22 @@ function vrMove(dt) {
         focusAnimation = null;
       }
       
-      // Speed boost with grip/squeeze
-      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
+      // Speed boost with thumbstick press (button[3] for right stick)
+      const speedMultiplier = gamepad.buttons[3]?.pressed ? 3 : 1;
       
       // Smooth turning with right stick X
       dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
       
       // Vertical movement with right stick Y
-      if (Math.abs(y) > 0.1) {
-        dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
+      dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
+      
+      // Alternative: Use additional buttons for vertical movement
+      // X button (button[4]) for up, A button (button[0]) for down (when not measuring)
+      if (gamepad.buttons[4]?.pressed) { // X button
+        dolly.position.y += FLY_SPEED * speedMultiplier * dt;
+      }
+      if (gamepad.buttons[0]?.pressed && !ghostSpheres[hand].triggerPressed) { // A button
+        dolly.position.y -= FLY_SPEED * speedMultiplier * dt;
       }
     }
   }
