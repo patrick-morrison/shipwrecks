@@ -316,47 +316,41 @@ function vrMove(dt) {
     if (src.handedness === 'left') {
       // Cancel focus animation if user starts moving
       if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
-      const speed = MOVE_SPEED * speedMultiplier * dt;
+        cancelAnimationFrame(focusAnimation);
         focusAnimation = null;
+      }
+      
+      // Speed boost with grip/squeeze
+      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
+      const speed = MOVE_SPEED * speedMultiplier * dt;
+      
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0; // Lock to dolly's yaw
+      forward.applyQuaternion(dolly.quaternion);
+      forward.normalize();
+      
+      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+      
       // Horizontal movement ONLY (forward/back, strafe)
       dolly.position.addScaledVector(forward, -y * speed); // Negative for forward
       dolly.position.addScaledVector(right, x * speed);
-    } const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
+    }
+    
     if (src.handedness === 'right') {
       // Cancel focus animation if user starts turning/flying
       if (focusAnimation && (Math.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
-        cancelAnimationFrame(focusAnimation);ck to dolly's yaw
-        focusAnimation = null;applyQuaternion(dolly.quaternion);
-      } else {
-        forward.normalize();
-      // Speed boost with grip/squeeze  
+        cancelAnimationFrame(focusAnimation);
+        focusAnimation = null;
+      }
+      
+      // Speed boost with grip/squeeze
       const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
-      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+      
       // Smooth turning with right stick X
       dolly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
-      const speedMultiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
-      // Vertical movement with right stick Yier * dt;
-      if (Math.abs(y) > 0.1) {
-        dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
-      }olly.position.addScaledVector(forward, -y * speed); // Negative for forward
-    } dolly.position.addScaledVector(right, x * speed);
-  } }
-}
-    if (src.handedness === 'right') {
-// Render loopl focus animation if user starts turning/flying
-let tPrev = performance.now();ath.abs(x) > 0.1 || Math.abs(y) > 0.1)) {
-renderer.setAnimationLoop(t => {usAnimation);
-  const dt = (t - tPrev) / 1000; 
-  tPrev = t;
-  if (renderer.xr.isPresenting) vrMove(dt);
-  controls.enabled = !renderer.xr.isPresenting;
-  controls.update();tiplier = gamepad.buttons[1]?.pressed ? 3 : 1;
-  renderer.render(scene, camera);
-});   // Smooth turning with right stick X
-</script>ly.rotation.y -= x * TURN_SPEED * speedMultiplier * dt;
-</body>
-</html>/ Vertical movement with right stick Y
+      
+      // Vertical movement with right stick Y
       if (Math.abs(y) > 0.1) {
         dolly.position.y -= y * FLY_SPEED * speedMultiplier * dt;
       }
