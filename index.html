@@ -13,7 +13,11 @@
 <title>Virtual Dive – HNLMS K XI</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#111;color:#eee;font-family:sans-serif}
-  #info{position:absolute;top:10px;left:10px;z-index:10;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;font-size:13px;line-height:1.3em}
+  #info{position:absolute;top:10px;left:10px;z-index:10;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;font-size:13px;line-height:1.3em;max-width:300px}
+  #modelSelector{position:absolute;top:10px;right:10px;z-index:10;background:rgba(0,0,0,.8);border-radius:6px;border:1px solid rgba(255,255,255,.2)}
+  #modelCredit{position:absolute;top:50px;right:10px;z-index:10;background:rgba(0,0,0,.65);padding:4px 8px;border-radius:4px;font-size:11px;text-align:center;color:#999;border:1px solid rgba(255,255,255,.1)}
+  #modelSelector select{background:transparent;color:#eee;border:none;padding:8px 12px;font-size:13px;font-family:sans-serif;cursor:pointer;outline:none}
+  #modelSelector select option{background:#222;color:#eee}
   a{color:#87cefa;text-decoration:none}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.177.0/build/three.module.js"}}</script>
@@ -23,6 +27,15 @@
   <strong>VR:</strong> Thumbsticks to move/fly/turn<br>
   <strong>Desktop:</strong> Drag to orbit | Scroll to zoom | Click to measure<br>
   <strong>Measure:</strong> Click panel to toggle.
+</div>
+
+<div id="modelSelector">
+  <select id="modelDropdown">
+  </select>
+</div>
+
+<div id="modelCredit">
+  <span id="creditText">Model by WreckSploration</span>
 </div>
 
 <script type="module">
@@ -41,7 +54,19 @@ import { LineMaterial } from 'https://cdn.jsdelivr.net/npm/three@0.177.0/example
 import { LineGeometry } from 'https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/lines/LineGeometry.js';
 
 // ------------------------ Config ----------------------------
-const MODEL_URL  = 'models/kxi.glb';   // your optimised K XI model (Basis‑KTX2 + Draco)
+// Available models with display names and credits
+const MODELS = {
+  'kxi': { url: 'models/kxi.glb', name: 'HNLMS K XI (1946)', credit: 'WreckSploration' },
+  'alextbrown': { url: 'models/alextbrown.glb', name: 'Alex T Brown', credit: 'Patrick Morrison' },
+  'applecrossbarge': { url: 'models/applecrossbarge.glb', name: 'Applecross Barge', credit: 'Patrick Morrison & David Jackson' },
+  'dentonholme': { url: 'models/dentonholme.glb', name: 'Denton Holme', credit: 'Patrick Morrison' },
+  'mayfield': { url: 'models/mayfield.glb', name: 'Mayfield', credit: 'Patrick Morrison' },
+  'pointwalter': { url: 'models/pointwalter.glb', name: 'Point Walter', credit: 'Patrick Morrison & David Jackson' },
+  'sesa': { url: 'models/sesa.glb', name: 'Sesa', credit: 'WreckSploration' }
+};
+
+let currentModelKey = 'kxi'; // Default model
+const MODEL_URL = MODELS[currentModelKey].url;
 const MOVE_SPEED = 2.0;    // m/s base movement speed
 const TURN_SPEED = 1.5;    // rad/s turn speed
 const FLY_SPEED = 1.0;     // m/s vertical movement
@@ -142,6 +167,130 @@ ghostSpheres.left.visible = false;
 ghostSpheres.right.visible = false;
 scene.add(ghostSpheres.left);
 scene.add(ghostSpheres.right);
+
+// Measurement variables - declared early to avoid initialization errors
+let measurementSprite = null;
+let measurementCanvas = null;
+let measurementTexture = null;
+let measurementSystemEnabled = true; // Start enabled
+let yButtonPressed = false; // Track Y button state
+let desktopMeasurementMode = false; // Desktop measurement mode toggle
+
+// Desktop measurement variables
+let desktopMeasurementPoints = [];
+let desktopMeasurementLine = null;
+let desktopMeasurementDisplay = null;
+const MAX_DESKTOP_POINTS = 2;
+
+// Create unified measurement panel for both VR and desktop
+function createMeasurementPanel() {
+  const panel = document.createElement('div');
+  panel.id = 'measurementPanel';
+  panel.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    z-index: 100;
+    cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(5px);
+    transition: all 0.3s ease;
+    user-select: none;
+    min-width: 120px;
+    text-align: center;
+  `;
+  
+  // Add hover effects
+  panel.addEventListener('mouseenter', () => {
+    panel.style.background = 'rgba(0, 0, 0, 0.8)';
+    panel.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+  });
+  
+  panel.addEventListener('mouseleave', () => {
+    panel.style.background = 'rgba(0, 0, 0, 0.7)';
+    panel.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+  });
+  
+  // Toggle measurement mode on click
+  panel.addEventListener('click', () => {
+    if (!renderer.xr.isPresenting) {
+      desktopMeasurementMode = !desktopMeasurementMode;
+      updateMeasurementPanel();
+      
+      if (!desktopMeasurementMode) {
+        clearDesktopMeasurement();
+      }
+    } else {
+      // In VR, toggle the VR measurement system
+      measurementSystemEnabled = !measurementSystemEnabled;
+      updateMeasurementPanel();
+      
+      if (!measurementSystemEnabled) {
+        // Clear VR measurements
+        ghostSpheres.left.visible = false;
+        ghostSpheres.right.visible = false;
+        placedSpheres.forEach(sphere => scene.remove(sphere));
+        placedSpheres.length = 0;
+        if (connectionLine) {
+          scene.remove(connectionLine);
+          connectionLine = null;
+        }
+        if (measurementSprite) {
+          measurementSprite.visible = false;
+        }
+      }
+    }
+  });
+  
+  document.body.appendChild(panel);
+  return panel;
+}
+
+// Initialize measurement panel early
+const measurementPanel = createMeasurementPanel();
+
+// Update measurement panel function with safety check
+function updateMeasurementPanel() {
+  if (!measurementPanel) return; // Safety check
+  
+  const isVR = renderer.xr.isPresenting;
+  const isEnabled = isVR ? measurementSystemEnabled : desktopMeasurementMode;
+  const hasPoints = isVR ? placedSpheres.length : desktopMeasurementPoints.length;
+  const hasMeasurement = isVR ? (placedSpheres.length === 2) : (desktopMeasurementPoints.length === 2);
+  
+  if (!isEnabled) {
+    measurementPanel.innerHTML = `
+      <div style="color: #888;">MEASURE</div>
+      <div style="font-size: 12px; margin-top: 4px;">Click to enable</div>
+    `;
+    measurementPanel.style.borderColor = 'rgba(136, 136, 136, 0.3)';
+  } else if (hasMeasurement) {
+    const distance = isVR ? 
+      placedSpheres[0].position.distanceTo(placedSpheres[1].position) :
+      desktopMeasurementPoints[0].position.distanceTo(desktopMeasurementPoints[1].position);
+    
+    measurementPanel.innerHTML = `
+      <div style="color: white;">${distance.toFixed(2)}m</div>
+      <div style="font-size: 12px; margin-top: 4px;">Click to disable</div>
+    `;
+    measurementPanel.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+  } else {
+    const mode = isVR ? 'VR' : 'Desktop';
+    const instruction = isVR ? 'Use triggers' : 'Click points';
+    measurementPanel.innerHTML = `
+      <div style="color: #FFA726;">MEASURE: ON</div>
+      <div style="font-size: 12px; margin-top: 4px;">${instruction} (${hasPoints}/2)</div>
+    `;
+    measurementPanel.style.borderColor = 'rgba(255, 167, 38, 0.5)';
+  }
+}
 
 // Double-click focus system
 let lastClickTime = 0;
@@ -317,51 +466,155 @@ loadingDiv.style.cssText = `
   border-radius: 8px;
   font-family: sans-serif;
   z-index: 1000;
+  display: none;
 `;
 loadingDiv.innerHTML = 'Loading model...';
 document.body.appendChild(loadingDiv);
 
 // Load the wreck with progress tracking
 let wreck = null;
-loader.load(
-  MODEL_URL, 
-  gltf => {
-    wreck = gltf.scene; 
-    scene.add(wreck);
-    
-    const box = new THREE.Box3().setFromObject(wreck);
-    const sz  = box.getSize(new THREE.Vector3()).length();
-    const ctr = box.getCenter(new THREE.Vector3());
-    wreck.position.sub(ctr); // centre
-    controls.target.set(0,0,0);
-    camera.position.set(0, sz*0.3, sz*0.8);
-    
-    // Remove loading indicator
-    document.body.removeChild(loadingDiv);
-    console.log('Model loaded successfully');
-  },
-  progress => {
-    if (progress.lengthComputable) {
-      const percentComplete = progress.loaded / progress.total * 100;
-      loadingDiv.innerHTML = `Loading model... ${Math.round(percentComplete)}%`;
-    }
-  },
-  err => {
-    console.error('Model loading failed:', err);
-    loadingDiv.innerHTML = 'Failed to load model';
-    loadingDiv.style.color = '#ff6666';
+
+// Function to load a model by key
+function loadModel(modelKey) {
+  const modelConfig = MODELS[modelKey];
+  if (!modelConfig) {
+    console.error('Model not found:', modelKey);
+    return;
   }
-);
+  
+  // Remove existing model if present
+  if (wreck) {
+    scene.remove(wreck);
+    wreck = null;
+  }
+  
+  // Clear measurements when switching models
+  clearAllMeasurements();
+  
+  // Show loading indicator
+  loadingDiv.innerHTML = `Loading ${modelConfig.name}...`;
+  loadingDiv.style.display = 'block';
+  
+  // Update page title
+  document.title = `Virtual Dive – ${modelConfig.name}`;
+  
+  // Update credit display
+  const creditText = document.getElementById('creditText');
+  if (creditText) {
+    creditText.textContent = `Model by ${modelConfig.credit}`;
+  }
+  
+  loader.load(
+    modelConfig.url,
+    gltf => {
+      wreck = gltf.scene;
+      scene.add(wreck);
+      
+      const box = new THREE.Box3().setFromObject(wreck);
+      const sz = box.getSize(new THREE.Vector3()).length();
+      const ctr = box.getCenter(new THREE.Vector3());
+      wreck.position.sub(ctr); // centre
+      
+      // Reset camera and controls
+      controls.target.set(0, 0, 0);
+      camera.position.set(0, sz * 0.3, sz * 0.8);
+      
+      // Reset VR dolly position
+      dolly.position.set(0, 0, 0);
+      dolly.rotation.set(0, 0, 0);
+      
+      // Hide loading indicator
+      loadingDiv.style.display = 'none';
+      
+      console.log(`${modelConfig.name} loaded successfully`);
+      currentModelKey = modelKey;
+    },
+    progress => {
+      if (progress.lengthComputable) {
+        const percentComplete = progress.loaded / progress.total * 100;
+        loadingDiv.innerHTML = `Loading ${modelConfig.name}... ${Math.round(percentComplete)}%`;
+      }
+    },
+    err => {
+      console.error(`${modelConfig.name} loading failed:`, err);
+      loadingDiv.innerHTML = `Failed to load ${modelConfig.name}`;
+      loadingDiv.style.color = '#ff6666';
+      setTimeout(() => {
+        loadingDiv.style.display = 'none';
+        loadingDiv.style.color = 'white';
+      }, 3000);
+    }
+  );
+}
 
-// Add these variables after the existing sphere and line declarations
-let measurementSprite = null;
-let measurementCanvas = null;
-let measurementTexture = null;
+// Function to clear all measurements
+function clearAllMeasurements() {
+  // Clear VR measurements
+  placedSpheres.forEach(sphere => scene.remove(sphere));
+  placedSpheres.length = 0;
+  
+  // Clear desktop measurements
+  desktopMeasurementPoints.forEach(sphere => scene.remove(sphere));
+  desktopMeasurementPoints.length = 0;
+  
+  // Remove lines
+  if (connectionLine) {
+    scene.remove(connectionLine);
+    connectionLine = null;
+  }
+  if (desktopMeasurementLine) {
+    scene.remove(desktopMeasurementLine);
+    desktopMeasurementLine = null;
+  }
+  
+  // Hide measurement sprite
+  if (measurementSprite) {
+    measurementSprite.visible = false;
+  }
+  
+  // Reset measurement modes
+  desktopMeasurementMode = false;
+  measurementSystemEnabled = true;
+  
+  // Update panel
+  updateMeasurementPanel();
+}
 
-// Add measurement system state variable after the existing sphere declarations
-let measurementSystemEnabled = true; // Start enabled
-let yButtonPressed = false; // Track Y button state
-let desktopMeasurementMode = false; // Desktop measurement mode toggle
+// Initialize model dropdown
+function initializeModelDropdown() {
+  const dropdown = document.getElementById('modelDropdown');
+  
+  // Populate dropdown with models
+  Object.entries(MODELS).forEach(([key, config]) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = config.name;
+    if (key === currentModelKey) {
+      option.selected = true;
+    }
+    dropdown.appendChild(option);
+  });
+  
+  // Handle model selection
+  dropdown.addEventListener('change', (event) => {
+    const selectedModelKey = event.target.value;
+    if (selectedModelKey !== currentModelKey) {
+      loadModel(selectedModelKey);
+    }
+  });
+}
+
+// Initialize dropdown after DOM is ready
+initializeModelDropdown();
+
+// Initialize credit display
+const creditText = document.getElementById('creditText');
+if (creditText) {
+  creditText.textContent = `Model by ${MODELS[currentModelKey].credit}`;
+}
+
+// Load initial model
+loadModel(currentModelKey);
 
 // Function to create measurement display
 function createMeasurementDisplay(distance) {
@@ -735,12 +988,6 @@ function vrMove(dt) {
   }
 }
 
-// Add measurement variables for desktop mode
-let desktopMeasurementPoints = [];
-let desktopMeasurementLine = null;
-let desktopMeasurementDisplay = null;
-const MAX_DESKTOP_POINTS = 2;
-
 // Create desktop measurement display element
 function createDesktopMeasurementDisplay() {
   if (desktopMeasurementDisplay) return;
@@ -770,113 +1017,6 @@ createDesktopMeasurementDisplay();
 // Desktop measurement spheres - make twice as big and white
 const desktopSphereGeometry = new THREE.SphereGeometry(0.04, 12, 8); // 8cm radius, twice as big
 const desktopSphereMaterial = new THREE.MeshBasicMaterial({color: 0xffffff}); // White instead of red
-
-// Create unified measurement panel for both VR and desktop
-function createMeasurementPanel() {
-  const panel = document.createElement('div');
-  panel.id = 'measurementPanel';
-  panel.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 16px 20px;
-    border-radius: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    font-size: 16px;
-    font-weight: 600;
-    z-index: 100;
-    cursor: pointer;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    backdrop-filter: blur(5px);
-    transition: all 0.3s ease;
-    user-select: none;
-    min-width: 120px;
-    text-align: center;
-  `;
-  
-  // Add hover effects
-  panel.addEventListener('mouseenter', () => {
-    panel.style.background = 'rgba(0, 0, 0, 0.8)';
-    panel.style.borderColor = 'rgba(255, 255, 255, 0.5)';
-  });
-  
-  panel.addEventListener('mouseleave', () => {
-    panel.style.background = 'rgba(0, 0, 0, 0.7)';
-    panel.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-  });
-  
-  // Toggle measurement mode on click
-  panel.addEventListener('click', () => {
-    if (!renderer.xr.isPresenting) {
-      desktopMeasurementMode = !desktopMeasurementMode;
-      updateMeasurementPanel();
-      
-      if (!desktopMeasurementMode) {
-        clearDesktopMeasurement();
-      }
-    } else {
-      // In VR, toggle the VR measurement system
-      measurementSystemEnabled = !measurementSystemEnabled;
-      updateMeasurementPanel();
-      
-      if (!measurementSystemEnabled) {
-        // Clear VR measurements
-        ghostSpheres.left.visible = false;
-        ghostSpheres.right.visible = false;
-        placedSpheres.forEach(sphere => scene.remove(sphere));
-        placedSpheres.length = 0;
-        if (connectionLine) {
-          scene.remove(connectionLine);
-          connectionLine = null;
-        }
-        if (measurementSprite) {
-          measurementSprite.visible = false;
-        }
-      }
-    }
-  });
-  
-  document.body.appendChild(panel);
-  return panel;
-}
-
-// Initialize measurement panel
-const measurementPanel = createMeasurementPanel();
-
-function updateMeasurementPanel() {
-  const isVR = renderer.xr.isPresenting;
-  const isEnabled = isVR ? measurementSystemEnabled : desktopMeasurementMode;
-  const hasPoints = isVR ? placedSpheres.length : desktopMeasurementPoints.length;
-  const hasMeasurement = isVR ? (placedSpheres.length === 2) : (desktopMeasurementPoints.length === 2);
-  
-  if (!isEnabled) {
-    measurementPanel.innerHTML = `
-      <div style="color: #888;">MEASURE</div>
-      <div style="font-size: 12px; margin-top: 4px;">Click to enable</div>
-    `;
-    measurementPanel.style.borderColor = 'rgba(136, 136, 136, 0.3)';
-  } else if (hasMeasurement) {
-    const distance = isVR ? 
-      placedSpheres[0].position.distanceTo(placedSpheres[1].position) :
-      desktopMeasurementPoints[0].position.distanceTo(desktopMeasurementPoints[1].position);
-    
-    measurementPanel.innerHTML = `
-      <div style="color: white;">${distance.toFixed(2)}m</div>
-      <div style="font-size: 12px; margin-top: 4px;">Click to disable</div>
-    `;
-    measurementPanel.style.borderColor = 'rgba(255, 255, 255, 0.5)';
-  } else {
-    const mode = isVR ? 'VR' : 'Desktop';
-    const instruction = isVR ? 'Use triggers' : 'Click points';
-    measurementPanel.innerHTML = `
-      <div style="color: #FFA726;">MEASURE: ON</div>
-      <div style="font-size: 12px; margin-top: 4px;">${instruction} (${hasPoints}/2)</div>
-    `;
-    measurementPanel.style.borderColor = 'rgba(255, 167, 38, 0.5)';
-  }
-}
 
 // Update desktop measurement to use the panel
 function updateDesktopMeasurement() {
