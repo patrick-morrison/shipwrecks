@@ -1,16 +1,22 @@
 <!--
-  Virtual Dive – HNLMS K XI (1946)
+  Shipwreck Surveyor – VR Measurement Tool
   -------------------------------------------------------
-  • Desktop/phone: Orbit drag & scroll.
-  • Quest 2 VR   : Thumbsticks to fly/turn.
-  • Even lighting; KTX2, Draco & Meshopt decoding wired.
+  • Desktop/phone: Orbit drag & scroll, double-click to focus, click panel to measure.
+  • Quest 2 VR   : Thumbsticks to move/fly/turn, Y button to toggle measuring.
+  • Precision measurement system; KTX2, Draco & Meshopt decoding.
 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Virtual Dive – HNLMS K XI</title>
+<title>Shipwreck Surveyor – VR Measurement Tool</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#041729">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Wreck Surveyor">
+<link rel="apple-touch-icon" href="icons/icon-192x192.png">
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#111;color:#eee;font-family:sans-serif}
   #info{position:absolute;top:10px;left:10px;z-index:10;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;font-size:13px;line-height:1.3em;max-width:300px}
@@ -24,9 +30,10 @@
 </head>
 <body>
 <div id="info">
-  <strong>VR:</strong> Thumbsticks to move/fly/turn<br>
-  <strong>Desktop:</strong> Drag to orbit | Scroll to zoom | Click to measure<br>
-  <strong>Measure:</strong> Click panel to toggle.
+  <strong>Shipwreck Surveyor</strong><br>
+  <strong>VR:</strong> Thumbsticks to move/fly/turn | Y button to toggle measuring<br>
+  <strong>Desktop:</strong> Drag to orbit | Scroll to zoom | Double-click to focus<br>
+  <strong>Measure:</strong> Click panel to toggle, then click points to measure
 </div>
 
 <div id="modelSelector">
@@ -498,7 +505,7 @@ function loadModel(modelKey) {
   loadingDiv.style.display = 'block';
   
   // Update page title
-  document.title = `Virtual Dive – ${modelConfig.name}`;
+  document.title = `Wreck Surveyor – ${modelConfig.name}`;
   
   // Update credit display
   const creditText = document.getElementById('creditText');
@@ -1288,8 +1295,18 @@ renderer.setAnimationLoop(time => {
 // Initialize panel state
 updateMeasurementPanel();
 
-// Remove the global setupControllers() call - it should only run after session starts
-// setupControllers(); // REMOVED - this was causing the race condition
+// Register service worker for PWA functionality
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(registration => {
+        console.log('✅ Service Worker registered successfully:', registration.scope);
+      })
+      .catch(error => {
+        console.log('❌ Service Worker registration failed:', error);
+      });
+  });
+}
 </script>
 </body>
 </html>
